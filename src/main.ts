@@ -154,6 +154,12 @@ export default class ObsidianTypstMate extends Plugin {
       // 監視を登録する
       this.registerListeners();
 
+      const activeFile = this.app.workspace.getActiveFile();
+      if (activeFile) {
+        const cache = this.app.metadataCache.getCache(activeFile.path);
+        if (cache) this.typstManager.syncFileCache(cache);
+      }
+
       if (this.settings.preRenderOnStartup)
         this.typstManager.whenReady().then(() => {
           window.setTimeout(() => void this.editorHelper?.precompileActiveNote(), 800);
@@ -641,6 +647,8 @@ export default class ObsidianTypstMate extends Plugin {
         });
       }),
       this.app.metadataCache.on('changed', (file) => {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile || file.path !== activeFile.path) return;
         const cache = this.app.metadataCache.getCache(file.path);
         if (!cache) return;
         if (this.typstManager.syncFileCache(cache)) this.typstManager.refreshView();

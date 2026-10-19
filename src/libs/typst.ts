@@ -433,9 +433,6 @@ export default class TypstManager {
           });
         this.syncFileCache(cache);
       }
-    } else {
-      this.lastStateHash = '';
-      this.preamble = '';
     }
 
     // プロセッサーを決定
@@ -651,11 +648,16 @@ export default class TypstManager {
   }
 
   refreshView() {
-    const view = this.plugin.app.workspace.getActiveFileView();
-    if (!(view instanceof MarkdownView)) return;
+    this.clearSvgCache();
+    const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) return;
 
-    if (view.getMode() === 'preview') view.previewMode.rerender(true);
-    else view.leaf.rebuildView();
+    if (view.getMode() === 'preview') {
+      view.previewMode.rerender(true);
+    } else {
+      const svgs = view.contentEl.querySelectorAll('typstmate-svg') as NodeListOf<TypstSVGElement>;
+      for (const svg of svgs) svg.render();
+    }
   }
 
   /**
