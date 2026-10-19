@@ -118,11 +118,14 @@ export function format(plugin: ObsidianTypstMate, source: string, kind: Processo
     ? processor.format.replaceAll('{CODE}', source)
     : processor.format.replace('{CODE}', source);
   formatted = `${plugin.typstManager.preamble}\n${formatted}${kind === 'inline' ? '#text(size:0pt)[TypstMate]' : ''}`;
-  formatted = processor.noPreamble ? formatted : `${plugin.settings.preamble}\n${formatted}`;
+  formatted = processor.noPreamble
+    ? formatted
+    : `${plugin.settings.preamble}\n${plugin.typstManager.cjkPreamble ? `${plugin.typstManager.cjkPreamble}\n` : ''}${formatted}`;
 
   let offset =
     -processor.format.indexOf('{CODE}') -
     (processor.noPreamble ? 0 : plugin.settings.preamble.length + 1) -
+    (processor.noPreamble || !plugin.typstManager.cjkPreamble ? 0 : plugin.typstManager.cjkPreamble.length + 1) -
     plugin.typstManager.preamble.length -
     1;
 

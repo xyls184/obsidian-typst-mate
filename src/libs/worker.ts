@@ -74,6 +74,10 @@ export default class $ {
     return this.typst.list_fonts();
   }
 
+  findCjkFamily(): string | null {
+    return this.typst.find_cjk_family();
+  }
+
   parseFont(font: ArrayBuffer): FontInfo[] {
     return this.typst.get_font_info(font);
   }

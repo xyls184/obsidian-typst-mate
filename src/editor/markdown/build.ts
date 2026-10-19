@@ -17,6 +17,7 @@ import { codeblockPreviewExtension } from './extensions/CodeBlockPreview';
 import { debuggerExtension } from './extensions/Debugger';
 import { inlinePreviewExtension } from './extensions/InlineMathPreview';
 import { markdownCore } from './extensions/MarkdownCore';
+import { relaxedInlineMathExtension } from './extensions/RelaxedInlineMath';
 
 export function buildExtension(editorHelper: EditorHelper) {
   const extensions: Extension[] = [
@@ -42,6 +43,7 @@ export function buildExtension(editorHelper: EditorHelper) {
     linterExtension,
     codeblockPreviewExtension,
     inlinePreviewExtension,
+    relaxedInlineMathExtension,
 
     // Syntax Highlighting
     typstSyntaxHighlighting(),

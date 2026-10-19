@@ -2,6 +2,7 @@ pkg
 dist
 wasm/target
 node_modules
+tmp
 .idea
 
 .env
@@ -12,3 +13,4 @@ node_modules
 .vscode/**
 !.vscode/settings.json
 !.vscode/extensions.json
+typst.wasm

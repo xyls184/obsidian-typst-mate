@@ -346,7 +346,7 @@ class SnippetSuggestPlugin implements PluginValue {
         const argValue = this.argument ? this.argument.slice(1, -1) : undefined;
         content = new Function('input', 'window', content)(argValue, window);
       } catch (e) {
-        new Notice(t('notices.snippetExecutionFailed', { error: e.toString() }));
+        new Notice(t('notices.snippetExecutionFailed', { error: String(e) }));
         return;
       }
     }

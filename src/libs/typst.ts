@@ -1,6 +1,6 @@
 import { type CachedMetadata, getAllTags, MarkdownView, Notice, type TFile } from 'obsidian';
 
-import { DEFAULT_FONT_SIZE } from '@/constants';
+import { DEFAULT_FONT_SIZE, RELAXED_INLINE_MATH } from '@/constants';
 import { DEFAULT_SETTINGS, type Settings } from '@/data/settings';
 import { t } from '@/i18n';
 import type ObsidianTypstMate from '@/main';
@@ -26,6 +26,7 @@ export default class TypstManager {
   lastStateHash?: string;
 
   preamble: string = '';
+  cjkPreamble: string = '';
   tagFiles: Set<string> = new Set();
   currentNoteWidth?: string;
 
@@ -56,7 +57,7 @@ export default class TypstManager {
       await Promise.all(
         fontPaths.map((fontPath) =>
           this.plugin.app.vault.adapter.readBinary(fontPath).catch(() => {
-            new Notice(t('notices.failedToLoadFont', { name: fontPath.split('/').pop() }));
+            new Notice(t('notices.failedToLoadFont', { name: fontPath.split('/').pop() ?? fontPath }));
           }),
         ),
       )
@@ -76,7 +77,7 @@ export default class TypstManager {
           const cacheMap = unzip(await this.plugin.app.vault.adapter.readBinary(cachePath));
           for (const [path, data] of cacheMap) sources.set(`@${path}`, new Uint8Array(data!));
         } catch {
-          new Notice(t('notices.failedToLoadCache', { name: cachePath.split('/').pop() }));
+          new Notice(t('notices.failedToLoadCache', { name: cachePath.split('/').pop() ?? cachePath }));
         }
       }
     }
@@ -90,7 +91,8 @@ export default class TypstManager {
         files,
       });
       if (result instanceof Promise) {
-        result.then(() => {
+        result.then(async () => {
+          await this.prepareCjkFont();
           this.ready = true;
           this.plugin.updateCrashStatus(false);
 
@@ -112,10 +114,93 @@ export default class TypstManager {
       }
     } else {
       await this.plugin.typst.store({ fonts, sources, files });
+      await this.prepareCjkFont();
 
       this.ready = true;
       this.plugin.updateCrashStatus(false);
     }
+  }
+
+  /**
+   * Uses an already loaded CJK-capable font, or loads one from the OS on
+   * desktop. The detected family is exposed to Typst as a math text fallback.
+   */
+  private async prepareCjkFont() {
+    this.cjkPreamble = '';
+
+    let family: string | null = null;
+    try {
+      family = await this.plugin.typst.findCjkFamily();
+    } catch (err) {
+      console.error('TypstMate: failed to query CJK font', err);
+    }
+
+    if (!family) {
+      const data = this.loadSystemCjkFont();
+      if (data) {
+        try {
+          await this.plugin.typst.store({ fonts: [data], sources: new Map(), files: new Map() });
+          family = await this.plugin.typst.findCjkFamily();
+        } catch (err) {
+          console.error('TypstMate: failed to load system CJK font', err);
+        }
+      }
+    }
+
+    if (family)
+      this.cjkPreamble = `#show math.equation: set text(font: ("New Computer Modern", ${JSON.stringify(family)}))`;
+  }
+
+  /** Reads a CJK font from the host font directory. Desktop only. */
+  private loadSystemCjkFont(): ArrayBuffer | undefined {
+    const { fs, path, os } = this.plugin;
+    if (!fs || !path) return undefined;
+
+    const home = os?.homedir() ?? '';
+    const candidates: string[] = [];
+
+    if (process.platform === 'win32') {
+      const winDir = process.env.WINDIR ?? 'C:\\Windows';
+      const localAppData = process.env.LOCALAPPDATA ?? path.join(home, 'AppData', 'Local');
+      const systemFonts = path.join(winDir, 'Fonts');
+      const userFonts = path.join(localAppData, 'Microsoft', 'Windows', 'Fonts');
+      for (const dir of [systemFonts, userFonts])
+        candidates.push(
+          path.join(dir, 'NotoSerifSC-VF.ttf'),
+          path.join(dir, 'NotoSansSC-VF.ttf'),
+          path.join(dir, 'msyh.ttc'),
+          path.join(dir, 'simsun.ttc'),
+          path.join(dir, 'simhei.ttf'),
+          path.join(dir, 'Deng.ttf'),
+        );
+    } else if (process.platform === 'darwin') {
+      candidates.push(
+        '/System/Library/Fonts/PingFang.ttc',
+        '/System/Library/Fonts/STHeiti Light.ttc',
+        '/System/Library/Fonts/Supplemental/Songti.ttc',
+        '/Library/Fonts/Arial Unicode.ttf',
+        path.join(home, 'Library', 'Fonts', 'NotoSansCJK-Regular.ttc'),
+      );
+    } else {
+      candidates.push(
+        '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+        '/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc',
+        '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+        '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+        '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+        path.join(home, '.local', 'share', 'fonts', 'NotoSansCJK-Regular.ttc'),
+      );
+    }
+
+    for (const candidate of candidates) {
+      try {
+        if (!fs.existsSync(candidate)) continue;
+        const buffer = fs.readFileSync(candidate);
+        return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+      } catch {}
+    }
+
+    return undefined;
   }
 
   registerOnce() {
@@ -165,6 +250,13 @@ export default class TypstManager {
       }
     }, -100);
 
+    // Relaxed inline math (`$ ... $`) for reading view. Obsidian's parser
+    // leaves these as text because the closing `$` is preceded by a space.
+    this.plugin.registerMarkdownPostProcessor((el, ctx) => {
+      if (!this.ready) return;
+      this.renderRelaxedInlineMath(el, ctx.sourcePath);
+    });
+
     // MathJax をオーバライド
     window.MathJax!.tex2chtml = (e: string, r: { display?: boolean }) => {
       // タグ名，クラス名，属性がこれ以外だと認識されないない
@@ -186,6 +278,56 @@ export default class TypstManager {
 
       return this.render(e, container, r.display ? 'display' : 'inline', ndir, npath);
     };
+  }
+
+  private renderRelaxedInlineMath(el: HTMLElement, sourcePath: string) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node.nodeValue?.includes('$')) return NodeFilter.FILTER_REJECT;
+
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        if (parent.closest('code, pre, .math, mjx-container, .typstmate-relaxed-inline-math, .typstmate-inline'))
+          return NodeFilter.FILTER_REJECT;
+
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+
+    const textNodes: Text[] = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode as Text);
+
+    const ndir = ctxToNDir(sourcePath);
+    for (const node of textNodes) {
+      const text = node.nodeValue!;
+      RELAXED_INLINE_MATH.lastIndex = 0;
+
+      let match = RELAXED_INLINE_MATH.exec(text);
+      if (!match) continue;
+
+      const fragment = document.createDocumentFragment();
+      let lastIndex = 0;
+
+      while (match) {
+        fragment.append(text.slice(lastIndex, match.index));
+
+        const code = match[1];
+        if (code !== undefined && !/^[\d\s.,]+$/.test(code)) {
+          const container = document.createElement('span');
+          container.className = 'typstmate-relaxed-inline-math';
+          this.render(code, container, 'inline', ndir, sourcePath);
+          fragment.append(container);
+        } else {
+          fragment.append(match[0]);
+        }
+
+        lastIndex = match.index + match[0].length;
+        match = RELAXED_INLINE_MATH.exec(text);
+      }
+
+      fragment.append(text.slice(lastIndex));
+      node.replaceWith(fragment);
+    }
   }
 
   render(code: string, containerEl: Element, kind: string, ndir: string, npath?: string): HTMLElement {
