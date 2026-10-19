@@ -343,6 +343,7 @@ export default class ObsidianTypstMate extends Plugin {
       editorCallback: async () => {
         const files = await this.typstManager.collectTagFiles();
         await this.typst.store({ files });
+        this.typstManager.clearSvgCache();
 
         this.typstManager.refreshView();
       },

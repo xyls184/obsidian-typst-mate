@@ -10,11 +10,14 @@ import { unzip, zip } from '@/utils/packageCompressor';
 import { expandHierarchicalTags } from '@/utils/tags';
 
 import { FULL_HEIGHT_INLINE_FORMAT, type Processor, type ProcessorKind } from './processor';
-import type { PackageSpec } from './worker';
+import type { PackageSpec, SVGResult } from './worker';
 
 import './typst.css';
 
 const re = /\n([ \t]*> )/g;
+
+/** Upper bound for cached SVG results (~10 KB each). */
+const SVG_CACHE_LIMIT = 512;
 
 export default class TypstManager {
   plugin: ObsidianTypstMate;
@@ -30,11 +33,77 @@ export default class TypstManager {
   tagFiles: Set<string> = new Set();
   currentNoteWidth?: string;
 
+  private svgCache = new Map<string, SVGResult>();
+  private pendingSvg = new Map<string, Promise<SVGResult>>();
+  private svgEpoch = 0;
+
   constructor(plugin: ObsidianTypstMate) {
     this.plugin = plugin;
   }
 
+  /**
+   * Drops every cached SVG. Call whenever the Typst world changes (fonts,
+   * packages, tag files, offset) or the formatted source would no longer be
+   * unique.
+   */
+  clearSvgCache() {
+    this.svgEpoch++;
+    this.svgCache.clear();
+    this.pendingSvg.clear();
+  }
+
+  /**
+   * Renders an already formatted document through the worker, reusing a
+   * previous result for the same source. CodeMirror recreates widgets while
+   * scrolling, so without this the same formula is recompiled every time it
+   * re-enters the viewport.
+   */
+  svg(code: string, ndir: string, kind: string): SVGResult | Promise<SVGResult> {
+    const key = `${kind}\0${ndir}\0${code}`;
+
+    const cached = this.svgCache.get(key);
+    if (cached) {
+      // Refresh LRU position.
+      this.svgCache.delete(key);
+      this.svgCache.set(key, cached);
+      return cached;
+    }
+
+    const pending = this.pendingSvg.get(key);
+    if (pending) return pending;
+
+    const result = this.plugin.typst.svg(code, ndir, kind, '');
+    if (!(result instanceof Promise)) return this.storeSvg(key, result);
+
+    const epoch = this.svgEpoch;
+    const request = result.then(
+      (value) => {
+        // The world changed while this request was in flight.
+        if (epoch !== this.svgEpoch) return value;
+
+        this.pendingSvg.delete(key);
+        return this.storeSvg(key, value);
+      },
+      (err) => {
+        if (epoch === this.svgEpoch) this.pendingSvg.delete(key);
+        throw err;
+      },
+    );
+    this.pendingSvg.set(key, request);
+    return request;
+  }
+
+  private storeSvg(key: string, result: SVGResult): SVGResult {
+    if (this.svgCache.size >= SVG_CACHE_LIMIT) {
+      const oldest = this.svgCache.keys().next().value;
+      if (oldest !== undefined) this.svgCache.delete(oldest);
+    }
+    this.svgCache.set(key, result);
+    return result;
+  }
+
   async init() {
+    this.clearSvgCache();
     this.ready = false;
     this.plugin.updateCrashStatus(true);
     this.updateNoteWidth();
@@ -90,6 +159,7 @@ export default class TypstManager {
         sources,
         files,
       });
+      this.clearSvgCache();
       if (result instanceof Promise) {
         result.then(async () => {
           await this.prepareCjkFont();
@@ -114,6 +184,7 @@ export default class TypstManager {
       }
     } else {
       await this.plugin.typst.store({ fonts, sources, files });
+      this.clearSvgCache();
       await this.prepareCjkFont();
 
       this.ready = true;
@@ -140,6 +211,7 @@ export default class TypstManager {
       if (data) {
         try {
           await this.plugin.typst.store({ fonts: [data], sources: new Map(), files: new Map() });
+          this.clearSvgCache();
           family = await this.plugin.typst.findCjkFamily();
         } catch (err) {
           console.error('TypstMate: failed to load system CJK font', err);
@@ -454,7 +526,10 @@ export default class TypstManager {
 
     const atMap = new Map<string, Uint8Array>();
     for (const [k, v] of map) atMap.set(`@${k}`, v);
-    if (store) await this.plugin.typst.store({ sources: atMap });
+    if (store) {
+      await this.plugin.typst.store({ sources: atMap });
+      this.clearSvgCache();
+    }
 
     return atMap;
   }

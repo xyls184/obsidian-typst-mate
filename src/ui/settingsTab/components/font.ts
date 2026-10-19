@@ -177,6 +177,7 @@ export class FontList {
     await this.plugin.typst.store({
       fonts: [fontArrayBuffer],
     });
+    this.plugin.typstManager.clearSvgCache();
 
     // 表示
     this.addImportedFontSetting(`${this.plugin.fontsDirNPath}/${basename}`);

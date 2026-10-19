@@ -39,12 +39,31 @@ export default abstract class TypstElement extends HTMLElement {
 
   abstract render(): Promise<this>;
 
+  /**
+   * Diagnostics are mapped onto the active math/codeblock region, so only the
+   * element that owns that region may publish them. Every other rendered
+   * formula would otherwise queue an editor transaction and trigger another
+   * lint pass while scrolling.
+   */
+  private isActiveRegion(): boolean {
+    const view = this.plugin.app.workspace.getActiveFileView();
+    if (!(view instanceof MarkdownView)) return false;
+
+    const file = this.plugin.app.workspace.getActiveFile();
+    if (this.npath && file && this.npath !== file.path) return false;
+
+    const region = getActiveRegion(view.editor.cm);
+    if (!region || region.kind !== this.kind) return false;
+
+    return view.editor.cm.state.sliceDoc(region.from + region.skip, region.to) === this.source;
+  }
+
   postProcess(result: SVGResult) {
     this.isErr = false;
 
     // ? キャンバスなどで呼ばれたとき用
     const view = this.plugin.app.workspace.getActiveFileView();
-    if (view instanceof MarkdownView)
+    if (view instanceof MarkdownView && this.isActiveRegion())
       setTimeout(() => {
         updateDiagnosticEffect(view.editor.cm, {
           diagnostics: result.diags,
@@ -69,7 +88,7 @@ export default abstract class TypstElement extends HTMLElement {
     this.plugin.typstManager.beforeKind = this.kind;
 
     const view = this.plugin.app.workspace.getActiveFileView();
-    if (view instanceof MarkdownView)
+    if (view instanceof MarkdownView && this.isActiveRegion())
       setTimeout(() => {
         updateDiagnosticEffect(view.editor.cm, {
           diagnostics: err,
@@ -113,19 +132,28 @@ export default abstract class TypstElement extends HTMLElement {
   }
 }
 
+/**
+ * Han, kana, Hangul, CJK punctuation and fullwidth forms. The math.text font
+ * fallback is only needed when the source actually contains these; injecting
+ * it into every formula makes Typst resolve a second font family for all text
+ * runs and adds a measurable cost to each compile.
+ */
+const CJK = /[\u2E80-\u2FFF\u3000-\u303F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/;
+
 export function format(plugin: ObsidianTypstMate, source: string, kind: ProcessorKind, processor: Processor) {
   let formatted = processor.useReplaceAll
     ? processor.format.replaceAll('{CODE}', source)
     : processor.format.replace('{CODE}', source);
   formatted = `${plugin.typstManager.preamble}\n${formatted}${kind === 'inline' ? '#text(size:0pt)[TypstMate]' : ''}`;
+  const cjkPreamble = CJK.test(source) ? plugin.typstManager.cjkPreamble : '';
   formatted = processor.noPreamble
     ? formatted
-    : `${plugin.settings.preamble}\n${plugin.typstManager.cjkPreamble ? `${plugin.typstManager.cjkPreamble}\n` : ''}${formatted}`;
+    : `${plugin.settings.preamble}\n${cjkPreamble ? `${cjkPreamble}\n` : ''}${formatted}`;
 
   let offset =
     -processor.format.indexOf('{CODE}') -
     (processor.noPreamble ? 0 : plugin.settings.preamble.length + 1) -
-    (processor.noPreamble || !plugin.typstManager.cjkPreamble ? 0 : plugin.typstManager.cjkPreamble.length + 1) -
+    (processor.noPreamble || !cjkPreamble ? 0 : cjkPreamble.length + 1) -
     plugin.typstManager.preamble.length -
     1;
 

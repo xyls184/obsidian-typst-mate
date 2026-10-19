@@ -120,6 +120,7 @@ export class TypstTextView extends TextFileView {
 
     const typstPath = this.file.path.slice(importPath.length);
     this.plugin.typst.store({ files: new Map([[typstPath, content]]) });
+    this.plugin.typstManager.clearSvgCache();
 
     const tag = typstPath
       .slice(importPath.length + 1) // importPath + "/" の分

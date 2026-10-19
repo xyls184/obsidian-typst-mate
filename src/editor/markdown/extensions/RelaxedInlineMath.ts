@@ -76,8 +76,16 @@ function collectExcludedRanges(view: EditorView): Range[] {
   return ranges;
 }
 
+function hasDollar(view: EditorView): boolean {
+  for (const { from, to } of view.visibleRanges) if (view.state.sliceDoc(from, to).includes('$')) return true;
+  return false;
+}
+
 function buildDecorations(view: EditorView): DecorationSet {
   if (!view.state.field(editorLivePreviewField, false)) return Decoration.none;
+  // Avoid walking the syntax tree and scanning every line while scrolling
+  // through notes that contain no dollar signs at all.
+  if (!hasDollar(view)) return Decoration.none;
 
   const helper = view.state.facet(helperFacet);
   const file = helper.plugin.app.workspace.getActiveFile();

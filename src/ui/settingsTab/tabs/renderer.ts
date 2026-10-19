@@ -67,6 +67,7 @@ export function addRendererTab(plugin: ObsidianTypstMate, containerEl: HTMLEleme
         plugin.settings.offset = value;
         plugin.saveSettings();
         await plugin.typst.setOffset(plugin.settings.offset);
+        plugin.typstManager.clearSvgCache();
       });
     });
 

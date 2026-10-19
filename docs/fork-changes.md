@@ -57,6 +57,19 @@ This makes `cases`, fractions, sums, and other large operators keep their
 display size instead of the compressed inline size. The setting applies to the
 default plain `${CODE}$` inline processor; custom processors are unchanged.
 
+## SVG render cache
+
+Every formula used to be compiled from scratch. CodeMirror destroys widgets
+outside the viewport and recreates them when they scroll back, so the same
+formula was recompiled on every pass. `TypstManager.svg()` now caches results
+by `kind + ndir + formatted source`, shares in-flight requests, and keeps up to
+512 SVGs in LRU order. The cache is cleared whenever the Typst world changes
+(fonts, packages, tag files, offset) or the source is reformatted.
+
+The CJK `math.text` rule is only injected when the formula source contains
+CJK characters (Han, kana, Hangul, CJK punctuation, or fullwidth forms);
+formulas without them use Typst's default text font and compile faster.
+
 ## CJK fallback in math
 
 `TypstManager.prepareCjkFont()` looks for a CJK-capable family among the fonts

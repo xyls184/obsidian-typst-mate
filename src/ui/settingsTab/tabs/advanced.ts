@@ -15,6 +15,7 @@ export function addAdvancedTab(plugin: ObsidianTypstMate, containerEl: HTMLEleme
         async () => {
           const files = await plugin.typstManager.collectTagFiles();
           await plugin.typst.store({ files });
+          plugin.typstManager.clearSvgCache();
           new Notice(t('notices.filesUpdated'));
 
           plugin.typstManager.refreshView();

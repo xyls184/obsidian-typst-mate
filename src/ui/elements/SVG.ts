@@ -105,7 +105,7 @@ export default class TypstSVGElement extends TypstElement {
     const formatted = this.format();
 
     try {
-      const result = this.plugin.typst.svg(formatted, this.ndir, this.kind, this.id);
+      const result = this.plugin.typstManager.svg(formatted, this.ndir, this.kind);
 
       if (result instanceof Promise)
         result
