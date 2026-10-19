@@ -148,7 +148,7 @@ export default class TypstManager {
     }
 
     if (family)
-      this.cjkPreamble = `#show math.equation: set text(font: ("New Computer Modern", ${JSON.stringify(family)}))`;
+      this.cjkPreamble = `#show math.text: set text(font: ("New Computer Modern", ${JSON.stringify(family)}))`;
   }
 
   /** Reads a CJK font from the host font directory. Desktop only. */
@@ -312,7 +312,7 @@ export default class TypstManager {
         fragment.append(text.slice(lastIndex, match.index));
 
         const code = match[1];
-        if (code !== undefined && !/^[\d\s.,]+$/.test(code)) {
+        if (code !== undefined) {
           const container = document.createElement('span');
           container.className = 'typstmate-relaxed-inline-math';
           this.render(code, container, 'inline', ndir, sourcePath);

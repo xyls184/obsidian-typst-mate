@@ -43,8 +43,12 @@ one from the host font directory on desktop:
 The detected family is injected as:
 
 ```typst
-#show math.equation: set text(font: ("New Computer Modern", "<family>"))
+#show math.text: set text(font: ("New Computer Modern", "<family>"))
 ```
+
+The rule targets `math.text` rather than `math.equation`; setting the text font
+on the whole equation would make stretchy delimiters such as the `cases` brace
+fall back to a non-stretchy text-font glyph.
 
 On mobile, place a CJK font in `.obsidian/plugins/typst-mate/fonts/`.
 
@@ -58,8 +62,7 @@ reading-view postprocessor render those spans with Typst.
 - Live preview replaces the span with a Typst widget; clicking it restores the
   source for editing.
 - Reading view replaces matching text nodes.
-- Purely numeric spans such as `$100 $` are ignored to avoid currency false
-  positives.
 - Native Obsidian math, code blocks, and inline code are excluded.
+- `\$` is treated as an escaped dollar; no other heuristics are applied.
 - Limitation: a leading-space-only form like `$ x$` is still left to Obsidian
   in reading view; the reported trailing-space form is covered.

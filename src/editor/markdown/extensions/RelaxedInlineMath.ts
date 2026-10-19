@@ -103,11 +103,7 @@ function buildDecorations(view: EditorView): DecorationSet {
         const from = line.from + match.index;
         const to = from + match[0].length;
 
-        if (
-          /^[\d\s.,]+$/.test(code) ||
-          overlaps(excluded, from, to) ||
-          view.state.selection.ranges.some((s) => s.from <= to && from <= s.to)
-        )
+        if (overlaps(excluded, from, to) || view.state.selection.ranges.some((s) => s.from <= to && from <= s.to))
           continue;
 
         builder.add(
