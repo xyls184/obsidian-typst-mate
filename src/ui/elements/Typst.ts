@@ -4,8 +4,8 @@ import { DEFAULT_FONT_SIZE } from '@/constants';
 import { updateDiagnosticEffect } from '@/editor/shared/extensions/Diagnostic';
 import { getActiveRegion } from '@/editor/shared/utils/core';
 import { t } from '@/i18n';
+import { format } from '@/libs/format';
 import type { Processor, ProcessorKind } from '@/libs/processor';
-import { getNoteWidth } from '@/libs/profile';
 import type { Diagnostic, SVGResult } from '@/libs/worker';
 import type ObsidianTypstMate from '@/main';
 import { DiagnosticModal } from '../modals/diagnostic';
@@ -130,38 +130,4 @@ export default abstract class TypstElement extends HTMLElement {
       this.menu.showAtPosition({ x: event.pageX, y: event.pageY });
     });
   }
-}
-
-/**
- * Han, kana, Hangul, CJK punctuation and fullwidth forms. The math.text font
- * fallback is only needed when the source actually contains these; injecting
- * it into every formula makes Typst resolve a second font family for all text
- * runs and adds a measurable cost to each compile.
- */
-const CJK = /[\u2E80-\u2FFF\u3000-\u303F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/;
-
-export function format(plugin: ObsidianTypstMate, source: string, kind: ProcessorKind, processor: Processor) {
-  let formatted = processor.useReplaceAll
-    ? processor.format.replaceAll('{CODE}', source)
-    : processor.format.replace('{CODE}', source);
-  formatted = `${plugin.typstManager.preamble}\n${formatted}${kind === 'inline' ? '#text(size:0pt)[TypstMate]' : ''}`;
-  const cjkPreamble = CJK.test(source) ? plugin.typstManager.cjkPreamble : '';
-  formatted = processor.noPreamble
-    ? formatted
-    : `${plugin.settings.preamble}\n${cjkPreamble ? `${cjkPreamble}\n` : ''}${formatted}`;
-
-  let offset =
-    -processor.format.indexOf('{CODE}') -
-    (processor.noPreamble ? 0 : plugin.settings.preamble.length + 1) -
-    (processor.noPreamble || !cjkPreamble ? 0 : cjkPreamble.length + 1) -
-    plugin.typstManager.preamble.length -
-    1;
-
-  if (processor.fitToNoteWidth) {
-    const width = getNoteWidth(plugin);
-    formatted = `#let WIDTH = ${width}\n${formatted}`;
-    offset -= 14 + width.length;
-  }
-
-  return { formatted, offset };
 }

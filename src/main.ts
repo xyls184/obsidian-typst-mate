@@ -15,7 +15,7 @@ import {
   Plugin,
   renderMath,
   requestUrl,
-  type TFile,
+  TFile,
   TFolder,
   type WorkspaceLeaf,
 } from 'obsidian';
@@ -141,6 +141,11 @@ export default class ObsidianTypstMate extends Plugin {
 
       // 監視を登録する
       this.registerListeners();
+
+      if (this.settings.preRenderOnStartup)
+        this.typstManager.whenReady().then(() => {
+          window.setTimeout(() => void this.editorHelper?.precompileActiveNote(), 800);
+        });
 
       // Style Settings に登録
       app.workspace.trigger('parse-style-settings');
@@ -338,6 +343,15 @@ export default class ObsidianTypstMate extends Plugin {
     });
 
     this.addCommand({
+      id: 'refresh-all-formulas',
+      name: t('commands.refreshAllFormulas'),
+      callback: async () => {
+        await this.typstManager.refreshAll();
+        new Notice(t('notices.formulasRefreshed'));
+      },
+    });
+
+    this.addCommand({
       id: 'reload tag files',
       name: t('commands.reloadTagFiles'),
       editorCallback: async () => {
@@ -386,6 +400,9 @@ export default class ObsidianTypstMate extends Plugin {
     );
 
     this.listeners.push(
+      this.app.vault.on('modify', (file) => {
+        if (file instanceof TFile && file.extension === 'md') this.typstManager.scheduleFileRefresh(file);
+      }),
       // ? css-change が意図しない値を渡すので arrow function で包む
       this.app.workspace.on('css-change', () => this.applyBaseColor.bind(this)),
       this.app.workspace.on('leaf-menu', (menu, leaf) => {
@@ -602,6 +619,8 @@ export default class ObsidianTypstMate extends Plugin {
     // 監視を終了
     this.listeners.forEach(this.app.workspace.offref.bind(this.app.workspace));
     // this.editorHelper.close();
+
+    this.typstManager?.dispose();
 
     // Worker を終了
     this.worker?.terminate();

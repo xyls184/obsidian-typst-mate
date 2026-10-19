@@ -70,6 +70,26 @@ The CJK `math.text` rule is only injected when the formula source contains
 CJK characters (Han, kana, Hangul, CJK punctuation, or fullwidth forms);
 formulas without them use Typst's default text font and compile faster.
 
+The cache is deliberately in-memory only. A persistent SVG cache would need a
+hash of every input (Typst version, fonts, CJK fallback, preamble, frontmatter
+imports, tag files, offset, processors); missing one input silently serves
+stale formulas. With ~8–15 KB per formula it would also grow into hundreds of
+MB, and reading it may not beat a 4–6 ms compile.
+
+## Live reload, refresh all, and startup pre-render
+
+- **Live Reload** (default on): `vault.on('modify')` refreshes reading views of
+  the changed note after a 400 ms debounce. Live Preview is not rebuilt; its
+  own widget re-renders only the edited formula, and the cache key change means
+  only that formula compiles again.
+- **Refresh All Formulas**: a Renderer-tab button and a `refresh-all-formulas`
+  command. It clears the SVG cache and rebuilds every open Markdown view.
+  Global settings are not auto-refreshed, to avoid background work.
+- **Pre-render Active Note on Startup** (default off): after the plugin is
+  ready, `EditorHelper.precompileActiveNote()` walks the active note's math
+  regions and compiles them one at a time into the cache. It awaits each
+  compile, so interactive renders queued in between run first.
+
 ## CJK fallback in math
 
 `TypstManager.prepareCjkFont()` looks for a CJK-capable family among the fonts

@@ -1,4 +1,4 @@
-import { Setting } from 'obsidian';
+import { Notice, Setting } from 'obsidian';
 
 import { DEFAULT_SETTINGS } from '@/data/settings';
 import { t, tFragment } from '@/i18n';
@@ -16,6 +16,38 @@ export function addRendererTab(plugin: ObsidianTypstMate, containerEl: HTMLEleme
         plugin.settings.enableBackgroundRendering = value;
         plugin.saveSettings();
         plugin.reload(true);
+      });
+    });
+
+  new Setting(containerEl)
+    .setName(t('settings.renderer.liveReload'))
+    .setDesc(t('settings.renderer.liveReloadDesc'))
+    .addToggle((toggle) => {
+      toggle.setValue(plugin.settings.liveReload);
+      toggle.onChange((value) => {
+        plugin.settings.liveReload = value;
+        plugin.saveSettings();
+      });
+    });
+
+  new Setting(containerEl)
+    .setName(t('settings.renderer.refreshAll'))
+    .setDesc(t('settings.renderer.refreshAllDesc'))
+    .addButton((button) => {
+      button.setButtonText(t('settings.renderer.refreshAllButton')).onClick(async () => {
+        await plugin.typstManager.refreshAll();
+        new Notice(t('notices.formulasRefreshed'));
+      });
+    });
+
+  new Setting(containerEl)
+    .setName(t('settings.renderer.preRenderOnStartup'))
+    .setDesc(t('settings.renderer.preRenderOnStartupDesc'))
+    .addToggle((toggle) => {
+      toggle.setValue(plugin.settings.preRenderOnStartup);
+      toggle.onChange((value) => {
+        plugin.settings.preRenderOnStartup = value;
+        plugin.saveSettings();
       });
     });
 

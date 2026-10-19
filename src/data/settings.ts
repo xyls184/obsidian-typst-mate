@@ -43,6 +43,8 @@ export interface Settings {
   baseColor: string;
   offset: number;
   inlineFullHeight: boolean;
+  liveReload: boolean;
+  preRenderOnStartup: boolean;
   fitToNoteWidthProfile: string;
   fitToNoteWidthProfiles: WidthProfile[];
 
@@ -105,6 +107,8 @@ export const DEFAULT_SETTINGS: Settings = {
   baseColor: '#000000',
   offset: 0.0,
   inlineFullHeight: false,
+  liveReload: true,
+  preRenderOnStartup: false,
   fitToNoteWidthProfile: 'Live',
   fitToNoteWidthProfiles: [
     { name: 'A3', width: '700pt' },

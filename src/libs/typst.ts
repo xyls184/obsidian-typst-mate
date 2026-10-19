@@ -9,7 +9,8 @@ import { overwriteCustomElements } from '@/utils/custromElementRegistry';
 import { unzip, zip } from '@/utils/packageCompressor';
 import { expandHierarchicalTags } from '@/utils/tags';
 
-import { FULL_HEIGHT_INLINE_FORMAT, type Processor, type ProcessorKind } from './processor';
+import { format, getEffectiveProcessor } from './format';
+import type { Processor, ProcessorKind } from './processor';
 import type { PackageSpec, SVGResult } from './worker';
 
 import './typst.css';
@@ -36,6 +37,8 @@ export default class TypstManager {
   private svgCache = new Map<string, SVGResult>();
   private pendingSvg = new Map<string, Promise<SVGResult>>();
   private svgEpoch = 0;
+  private readyResolvers: (() => void)[] = [];
+  private fileRefreshTimers = new Map<string, number>();
 
   constructor(plugin: ObsidianTypstMate) {
     this.plugin = plugin;
@@ -102,6 +105,24 @@ export default class TypstManager {
     return result;
   }
 
+  dispose() {
+    for (const timer of this.fileRefreshTimers.values()) window.clearTimeout(timer);
+    this.fileRefreshTimers.clear();
+  }
+
+  whenReady(): Promise<void> {
+    if (this.ready) return Promise.resolve();
+
+    const { promise, resolve } = Promise.withResolvers<void>();
+    this.readyResolvers.push(resolve);
+    return promise;
+  }
+
+  private markReady() {
+    this.ready = true;
+    for (const resolve of this.readyResolvers.splice(0)) resolve();
+  }
+
   async init() {
     this.clearSvgCache();
     this.ready = false;
@@ -163,7 +184,7 @@ export default class TypstManager {
       if (result instanceof Promise) {
         result.then(async () => {
           await this.prepareCjkFont();
-          this.ready = true;
+          this.markReady();
           this.plugin.updateCrashStatus(false);
 
           const waitingElements = document.querySelectorAll('.typstmate-waiting');
@@ -179,7 +200,7 @@ export default class TypstManager {
           }
         });
       } else {
-        this.ready = true;
+        this.markReady();
         this.plugin.updateCrashStatus(false);
       }
     } else {
@@ -187,7 +208,7 @@ export default class TypstManager {
       this.clearSvgCache();
       await this.prepareCjkFont();
 
-      this.ready = true;
+      this.markReady();
       this.plugin.updateCrashStatus(false);
     }
   }
@@ -449,13 +470,7 @@ export default class TypstManager {
         kind = 'codeblock';
     }
 
-    if (
-      kind === 'inline' &&
-      this.plugin.settings.inlineFullHeight &&
-      processor.format.includes('${CODE}$') &&
-      !processor.format.includes('math.equation')
-    )
-      processor = { ...processor, format: FULL_HEIGHT_INLINE_FORMAT };
+    processor = getEffectiveProcessor(this.plugin.settings, kind as ProcessorKind, processor);
 
     this.beforeProcessor = processor;
     if (processor.renderingEngine === 'mathjax') {
@@ -484,6 +499,16 @@ export default class TypstManager {
 
     this.beforeElement = typstSVGEl;
     return containerEl as HTMLElement;
+  }
+
+  /**
+   * Formats a formula exactly like the on-screen renderer and puts the result
+   * in the SVG cache without creating a DOM element.
+   */
+  precompile(source: string, kind: ProcessorKind, processor: Processor, ndir: string): SVGResult | Promise<SVGResult> {
+    const effective = getEffectiveProcessor(this.plugin.settings, kind, processor);
+    const { formatted } = format(this.plugin, source, kind, effective);
+    return this.svg(formatted, ndir, kind);
   }
 
   private async collectFiles(
@@ -631,6 +656,56 @@ export default class TypstManager {
 
     if (view.getMode() === 'preview') view.previewMode.rerender(true);
     else view.leaf.rebuildView();
+  }
+
+  /**
+   * Drops the cache and rebuilds every open Markdown view. This is the manual
+   * escape hatch after changing global settings; it is intentionally not
+   * triggered automatically.
+   */
+  async refreshAll() {
+    this.clearSvgCache();
+
+    const leaves = this.plugin.app.workspace.getLeavesOfType('markdown');
+    await Promise.all(
+      leaves.map(async (leaf) => {
+        const view = leaf.view;
+        if (!(view instanceof MarkdownView)) return;
+
+        try {
+          if (view.getMode() === 'preview') view.previewMode.rerender(true);
+          else await leaf.rebuildView();
+        } catch (err) {
+          console.error('TypstMate: failed to rebuild view', err);
+        }
+      }),
+    );
+
+    if (this.plugin.settings.preRenderOnStartup) void this.plugin.editorHelper?.precompileActiveNote();
+  }
+
+  /**
+   * Live reload only refreshes reading views of the file that changed. The
+   * live-preview editor re-renders just the edited widget itself, so it is
+   * deliberately left alone.
+   */
+  scheduleFileRefresh(file: TFile) {
+    if (!this.plugin.settings.liveReload) return;
+
+    const previous = this.fileRefreshTimers.get(file.path);
+    if (previous !== undefined) window.clearTimeout(previous);
+
+    const timer = window.setTimeout(() => {
+      this.fileRefreshTimers.delete(file.path);
+
+      for (const leaf of this.plugin.app.workspace.getLeavesOfType('markdown')) {
+        const view = leaf.view;
+        if (!(view instanceof MarkdownView) || view.file?.path !== file.path) continue;
+        if (view.getMode() === 'preview') view.previewMode.rerender(true);
+      }
+    }, 400);
+
+    this.fileRefreshTimers.set(file.path, timer);
   }
 
   updateNoteWidth() {

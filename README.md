@@ -51,7 +51,17 @@ Typst 每次编译公式都会重新排版。滚动时 CodeMirror 会销毁并�
 - 缓存键为 `kind + ndir + 完整格式化源码`（包含 preamble、CJK 设置和 frontmatter imports）。
 - 相同公式的并发请求会合并为一个编译任务。
 - 缓存最多保留 512 条，按使用顺序淘汰。
-- 字体、模板、preamble、offset 等世界状态变化时清空缓存。
+- 字体、包、tag 文件、offset 等 Typst world 状态变化时清空缓存；preamble 或 processor 变化会改变缓存键。
+
+### 为什么不在磁盘上长期保存 SVG
+
+SVG 依赖 Typst 版本、内置/系统字体、CJK fallback、preamble、frontmatter imports、tag 文件、offset 和 processor 设置。任何一项变化都会让旧 SVG 静默过期，而完整依赖哈希很容易漏项。单个公式的 SVG 约 8–15 KB，大量公式会占用数百 MB；从磁盘读取和解析这些文件也未必比在 worker 中重新编译（约 4–6 ms/条）更快。因此当前策略是：**每个会话按需编译 + 内存 LRU 缓存**，而不是持久化到磁盘。
+
+## 6. 实时重载、手动刷新与启动预热
+
+- **Live Reload**（默认开启）：笔记文件保存后，只刷新该笔记的**阅读视图/分屏预览**。Live Preview 本身只会重建被编辑的那个公式；缓存键变化后也只重新编译这一条，其他公式直接命中缓存。
+- **Refresh All Formulas**：Renderer 设置中的按钮，或命令面板中的 `Refresh all formulas`。清空 SVG 缓存并重建所有打开的 Markdown 视图。修改 preamble、processor、offset 等全局设置后手动执行；不会自动刷新，避免额外功耗。
+- **Pre-render Active Note on Startup**（默认关闭）：启动后在后台把当前笔记里的行内/显示公式逐条编译进缓存。使用现有单 worker 顺序编译，不增加内存；交互式渲染会插队，因此不会因为预热而卡住滚动。
 
 ## 为什么要保留在 fork，而不是直接给上游提 PR
 
