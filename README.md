@@ -63,6 +63,12 @@ SVG 依赖 Typst 版本、内置/系统字体、CJK fallback、preamble、frontm
 - **Refresh All Formulas**：Renderer 设置中的按钮，或命令面板中的 `Refresh all formulas`。清空 SVG 缓存并重建所有打开的 Markdown 视图。修改 preamble、processor、offset 等全局设置后手动执行；不会自动刷新，避免额外功耗。
 - **Pre-render Active Note on Startup**（默认关闭）：启动后在后台把当前笔记里的行内/显示公式逐条编译进缓存。使用现有单 worker 顺序编译，不增加内存；交互式渲染会插队，因此不会因为预热而卡住滚动。
 
+## 7. 界面汉化（简体中文 i18n）
+
+- 提供完整的简体中文语言包 `resources/locales/zh.json`，覆盖所有命令、右键菜单、模态框、设置面板、片段管理及 Typst 工具栏。
+- 完善语言检测逻辑，自动适配 Obsidian 界面语言设置（`zh`）、`window.moment.locale()`、系统与浏览器语言（`zh-CN`、`zh-Hans` 等）。
+- 修复 Linter 等模块的国际化实例引用，并在一致性测试中开启多语言 key 校验。
+
 ## 为什么要保留在 fork，而不是直接给上游提 PR
 
 - 上述改动实际包含三个独立部分：Typst 升级、CJK fallback、行内公式行为（宽松解析/基线/全高）。
@@ -78,6 +84,6 @@ SVG 依赖 Typst 版本、内置/系统字体、CJK fallback、preamble、frontm
 - `wasm-bindgen --target web --out-dir pkg --out-name typst_wasm wasm/target/wasm32-unknown-unknown/release/typst_wasm.wasm`
 - `bun scripts/patch-wasm-glue.ts`
 - `cp pkg/typst_wasm_bg.wasm typst.wasm && bun run build`
-- `bun test`：78 pass / 0 fail
+- `bun test`：79 pass / 0 fail
 - `tsc --noEmit`：通过
 - 已在 Obsidian 1.14.4（Windows）实测 live preview、reading view、PDF/SVG/PNG 导出、代码块处理器和 jump。

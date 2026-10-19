@@ -1,6 +1,7 @@
 import { type Diagnostic, setDiagnostics } from '@codemirror/lint';
 import { type EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view';
-import { t } from 'i18next';
+
+import { t } from '@/i18n';
 
 import { renderDiagnosticMessage } from '@/ui/elements/diagnostics';
 import { getActiveRegion } from '../utils/core';

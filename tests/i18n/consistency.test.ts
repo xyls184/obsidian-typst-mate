@@ -1,4 +1,4 @@
-import { describe, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { Glob } from 'bun';
 
 import en from '../../resources/locales/en.json';
@@ -9,7 +9,6 @@ describe('i18n consistency', () => {
   it('should have consistent keys across all locale files', async () => {
     const enKeys = new Set(getKeys(en));
     const glob = new Glob('resources/locales/*.json');
-    // biome-ignore lint/correctness/noUnusedVariables: in development
     let hasDiscrepancy = false;
 
     for await (const file of glob.scan('.')) {
@@ -37,6 +36,6 @@ describe('i18n consistency', () => {
       }
     }
 
-    // TODO: expect(hasDiscrepancy).toBe(false);
+    expect(hasDiscrepancy).toBe(false);
   });
 });

@@ -217,7 +217,7 @@ export default class ObsidianTypstMate extends Plugin {
     oldWasms.forEach(this.app.vault.adapter.remove.bind(this.app.vault.adapter));
 
     // 最新の Wasm がある URL を取得する
-    const releaseUrl = `https://api.github.com/repos/azyarashi/obsidian-typst-mate/releases/tags/${version}`;
+    const releaseUrl = `https://api.github.com/repos/xyls184/obsidian-typst-mate/releases/tags/${version}`;
     const releaseResponse = await requestUrl(releaseUrl);
     const releaseData = (await releaseResponse.json) as { assets: GitHubAsset[] };
     const asset = releaseData.assets.find((asset) => asset.name === `typst-${version}.wasm`);

@@ -1,0 +1,397 @@
+{
+  "common": {
+    "error": "错误",
+    "hintsCount": "[{{count}} 条提示]"
+  },
+
+  "commands": {
+    "boxCurrentEquation": "为当前公式添加边框",
+    "openTypstTools": "打开 Typst 工具",
+    "refreshAllFormulas": "刷新全部公式",
+    "reloadTagFiles": "重新加载标签文件",
+    "renderToExcalidraw": "渲染到 Excalidraw",
+    "replaceTexWithTypst": "在 Markdown 内容或选区中将 TeX 替换为 Typst",
+    "selectCurrentEquation": "选择当前公式",
+    "toggleBackgroundRendering": "切换后台渲染"
+  },
+
+  "contextMenu": {
+    "copyAsImgTag": "复制为 img 标签（用于嵌入 Obsidian 笔记）",
+    "copyAsPngOpaque": "复制为 PNG（不透明）",
+    "copyAsPngTransparent": "复制为 PNG（透明）",
+    "copyAsScript": "复制为脚本",
+    "copyAsSvgObsidian": "复制为 SVG（Obsidian 主题）",
+    "copyAsSvgTypst": "复制为 SVG（Typst 默认）",
+    "newTypstFile": "新建 Typst 文件",
+    "newTypstFileWithTemplate": "使用模板新建 Typst 文件",
+    "openAsPreview": "打开为预览",
+    "openAsText": "以文本方式打开",
+    "openWithDefaultApp": "使用默认应用打开"
+  },
+
+  "modals": {
+    "diagnostic": {
+      "hintPrefix": "提示：{{hint}}"
+    },
+    "excalidraw": {
+      "code": "代码",
+      "heading": "Excalidraw",
+      "previewPlaceholder": "在上方输入内容以查看预览",
+      "processorId": "处理器 ID",
+      "buttons": {
+        "add": "添加"
+      }
+    },
+    "exportTool": {
+      "customTimestamp": "自定义时间戳",
+      "customTimestampDesc": "设置自定义的创建日期/时间。",
+      "documentIdentifier": "文档标识符",
+      "documentIdentifierDesc": "文档的唯一标识符。",
+      "filenameTemplate": "文件名模板",
+      "filenameTemplateDesc": "页面文件名的模板。{p}：页码，{0p}：补零页码，{t}：总数。",
+      "format": "格式",
+      "heading": "导出 Typst 文档",
+      "optionalPlaceholder": "可选",
+      "pageRanges": "页面范围",
+      "pageRangesDesc": "以逗号分隔的范围列表。例如 1-3, 5, 7-",
+      "pageRangesPlaceholder": "例如 1-3, 5, 7-",
+      "pdfOptions": "PDF 选项",
+      "pngOptions": "PNG 选项",
+      "ppi": "PPI",
+      "ppiDesc": "每英寸像素数。数值越高，分辨率越高（例如 72、144、300）。",
+      "standard": "标准",
+      "standardDesc": "强制符合某项 PDF 标准。",
+      "svgOptions": "SVG 选项",
+      "taggedPdf": "标记 PDF",
+      "taggedPdfDesc": "包含无障碍元数据。",
+      "buttons": {
+        "export": "导出"
+      },
+      "filenameTemplateDefaults": {
+        "png": "page-{0p}-of-{t}.png",
+        "svg": "page-{0p}-of-{t}.svg"
+      },
+      "formatOptions": {
+        "pdf": "PDF",
+        "png": "PNG（图片）",
+        "svg": "SVG"
+      }
+    },
+    "font": {
+      "copyFontFamilyName": "复制字体家族名称",
+      "labels": {
+        "style": "样式：{{value}}",
+        "weight": "字重：{{value}}",
+        "stretch": "拉伸：{{value}}",
+        "flags": "标志：{{value}}"
+      }
+    },
+    "processorExt": {
+      "disableSymbolSuggest": "禁用符号建议",
+      "fitToNoteWidth": "适配笔记宽度",
+      "fitToNoteWidthDesc": "在代码开头添加一行，声明长度：<code>WIDTH</code>",
+      "usePreamble": "使用前言",
+      "useReplaceAll": "使用全部替换"
+    },
+    "templateSelect": {
+      "heading": "选择模板",
+      "buttons": {
+        "select": "选择"
+      }
+    }
+  },
+
+  "notices": {
+    "alreadyRegisteredCodeblock": "已注册代码块语言：{{id}}",
+    "cachedSuccessfully": "缓存成功！",
+    "copied": "已复制！",
+    "copiedToClipboard": "已复制到剪贴板！",
+    "crashAutoDisabled": "[Typst Mate] 由于连续三次崩溃，插件已被自动关闭",
+    "downloadingWasm": "正在下载最新 wasm...",
+    "exportFailed": "导出失败。请查看控制台了解详情。",
+    "exportedPngImages": "已导出 {{count}} 张 PNG 图片",
+    "exportedSvgPages": "已导出 {{count}} 个 SVG 页面",
+    "exportedTo": "已导出到 {{path}}",
+    "failedToCache": "缓存失败",
+    "failedToConvertSvgToPng": "将 SVG 转换为 PNG 失败",
+    "failedToLoadCache": "加载缓存失败：{{name}}",
+    "failedToLoadFont": "加载字体失败：{{name}}",
+    "failedToRemove": "删除失败",
+    "filesUpdated": "文件已更新。",
+    "fontAlreadyImported": "字体已导入！",
+    "formulasRefreshed": "公式已刷新。",
+    "idAlreadyExists": "该 ID 已存在。",
+    "idCannotBeEmpty": "ID 不能为空",
+    "importedSuccessfully": "导入成功！",
+    "initFailed": "初始化 Typst 失败。请确认处理器 ID 不含任何符号，尝试清空包缓存，并确保没有安装无效字体。",
+    "invalidNumberRevealDelay": "显示延迟的数值无效",
+    "noActiveRegion": "没有活动区域",
+    "noActiveView": "未找到活动视图。",
+    "pluginReloaded": "插件已重新加载。",
+    "removedSuccessfully": "删除成功！",
+    "revealDelayMustBePositive": "显示延迟必须大于 0",
+    "snippetExecutionFailed": "片段执行失败：{{error}}",
+    "templateDirNotExist": "模板目录不存在。请在导入路径中创建 `templates` 目录。",
+    "typstDirNotExist": "Typst 目录不存在。请检查高级设置。",
+    "wasmDownloaded": "Wasm 下载完成！"
+  },
+
+  "settings": {
+    "advanced": {
+      "applyProcessorToMathJax": "将处理器应用于 MathJax",
+      "enableDebugger": "启用调试器",
+      "enableMathjaxFallback": "启用 MathJax 回退",
+      "enableMathjaxFallbackDesc": "出于性能考虑，不推荐启用。启用后，<bold>Typst 错误、警告和提示将不可用。</bold>",
+      "importPath": "Typst 文件导入路径",
+      "importPathDesc": "库中用于查找要导入的 Typst 文件的目录。如果路径不存在或为空，此功能将被禁用。",
+      "openDetails": "打开详情",
+      "openSnippetManager": "打开片段管理器",
+      "openTypstToolsOnStartup": "启动时打开 Typst 工具",
+      "openTypstToolsOnStartupDesc": "启动 Obsidian 时在侧边栏打开 Typst 工具。",
+      "reloadPlugin": "重新加载插件",
+      "snippetsManaged": "片段在单独的标签页中管理。",
+      "buttons": {
+        "reloadPlugin": "重新加载插件"
+      }
+    },
+
+    "compiler": {
+      "disablePackageCache": "禁用包缓存",
+      "disablePackageCacheDesc": "禁用对导入包的缓存。适用于低内存环境，但需要重新下载包。",
+      "skipStartup": "跳过启动准备",
+      "skipStartupDesc": "启动时延迟初始化（在移动端不稳定）。可缩短启动时间，但会延迟首次渲染。",
+      "font": {
+        "clickToLoad": "点击加载系统字体列表",
+        "filterPlaceholder": "筛选字体名称",
+        "fontCount": "{{count}} 个字体",
+        "heading": "字体",
+        "importFont": "导入字体",
+        "importFontDesc": "仅限桌面版。Typst 支持 .ttf、.otf、.ttc 和 .otc 字体。",
+        "importedFonts": "已导入字体",
+        "importedFontsDesc": "每个字体名称旁边的字符串用于标识具有相同 PostScript 名称的字体。",
+        "tooltips": {
+          "getFontList": "获取字体列表",
+          "getInfo": "查看信息",
+          "importFont": "导入字体",
+          "openFolder": "打开文件夹",
+          "remove": "删除"
+        }
+      },
+      "package": {
+        "cachedPackages": "已缓存包",
+        "desc": "导入包时会使用缓存而非实际文件，以提高性能。如果你直接修改了文件，请点击包图标刷新缓存（需要重新加载插件）。",
+        "heading": "包",
+        "importLocal": "导入本地包",
+        "importLocalDesc": "仅限桌面版。",
+        "tooltips": {
+          "cache": "缓存",
+          "importLocalPackage": "导入本地包",
+          "openFolder": "打开文件夹",
+          "remove": "删除"
+        }
+      },
+      "subTabs": {
+        "font": "字体",
+        "package": "包"
+      }
+    },
+
+    "editor": {
+      "complementSymbolWithUnicode": "用 Unicode 补全符号",
+      "complementSymbolWithUnicodeDesc": "自动将输入的符号替换为对应的 Unicode 字符。",
+      "concealAndComplement": "隐藏与补全",
+      "concealMathSymbols": "隐藏数学符号",
+      "concealMathSymbolsDesc": "在编辑器中隐藏数学符号（例如将 integral 显示为 ∫）。",
+      "disableBracketHighlight": "禁用括号高亮",
+      "disableBracketHighlightDesc": "禁用匹配括号的高亮显示。",
+      "disableMacro": "禁用宏",
+      "disableMacroDesc": "禁用 mk、dm 等默认宏。",
+      "enableInlinePreview": "启用行内预览",
+      "enableInlinePreviewDesc": "为行内公式显示实时预览。",
+      "enableRevealDelay": "启用数学符号显示延迟",
+      "enableRevealDelayDesc": "在光标靠近时，延迟显示被隐藏的数学符号。",
+      "highlight": "高亮",
+      "inlinePreview": "行内预览",
+      "jumpOutsideBracket": "跳出括号",
+      "jumpOutsideBracketDesc": "允许光标跳出当前括号对。",
+      "macro": "宏",
+      "moveToEndOfMathBlock": "退出前移动到数学块末尾",
+      "moveToEndOfMathBlockDesc": "退出数学模式时，先将光标移动到块末尾。",
+      "preferInlineExit": "单行显示公式优先行内退出",
+      "preferInlineExitDesc": "如果显示公式块能容纳在一行内，则行内退出，而不是新建一行。",
+      "revealDelayDuration": "隐藏数学符号显示延迟时长（毫秒）",
+      "revealDelayDurationDesc": "显示符号文本前等待的时间（毫秒）。",
+      "revertTabToDefault": "将 Tab 恢复为默认行为",
+      "revertTabToDefaultDesc": "将 Tab 键恢复为默认缩进行为，而不是跳转到下一个占位符。",
+      "tabJump": "Tab 跳转",
+      "useObsidianTheme": "使用 Obsidian 主题",
+      "useObsidianThemeDesc": "使用 Obsidian 主题而非 Typst 主题。需要重新加载。",
+      "subTabs": {
+        "action": "操作",
+        "decoration": "装饰",
+        "popup": "弹出"
+      }
+    },
+
+    "processor": {
+      "desc": "在每种模式下，将使用从上到下第一个匹配的处理器 ID。空的处理器 ID 充当默认值，应放在底部。在格式中，可以使用 <code>{CODE}</code>（仅替换第一次出现的位置），并且可以将 <code>fontsize</code> 用作内部长度值。在行内模式下，在格式中用冒号 <code>:</code> 分隔 ID 和代码。为代码块模式添加或删除处理器后，需重新加载插件以应用更改。<bold>ID 不应包含任何特殊字符！</bold> 更多详情请参阅 <link href=\"https://github.com/azyarashi/obsidian-typst-mate/blob/main/docs/processor/Processor.md\">Processor.md</link>。",
+      "formatPlaceholder": "格式",
+      "heading": "处理器",
+      "idPlaceholder": "ID",
+      "inlineDesc": "仅使用行内元素，最后一行不要有额外换行（包括代码模式中的 ;）。如果使用块级元素，请用 box 函数将其转换为行内元素。要使用与 Typst 相同的排版，请将样式设置为 inline。对于显示数学公式，建议使用 $#math.equation($ {CODE} $, block: false)$。",
+      "preamble": "前言",
+      "preambleDesc": "可以通过切换每个处理器来开启或关闭前言。",
+      "preview": "预览",
+      "previewPlaceholder": "在上方输入内容以查看预览",
+      "buttons": {
+        "new": "新建",
+        "remove": "删除"
+      },
+      "processorTitles": {
+        "codeblock": "代码块（```id...``` / ~~~id...~~~）",
+        "display": "显示数学（$$id...$$ / $$...$$）",
+        "excalidraw": "Excalidraw",
+        "inline": "行内数学（$id:...$ / $...$）"
+      },
+      "renderingEngineOptions": {
+        "typstSvg": "Typst SVG",
+        "mathjax": "MathJax"
+      },
+      "stylingOptions": {
+        "inline": "inline",
+        "middle": "middle",
+        "baseline": "baseline",
+        "block": "block",
+        "blockCenter": "block-center",
+        "codeblock": "codeblock"
+      },
+      "subTabs": {
+        "codeblock": "代码块",
+        "display": "显示",
+        "excalidraw": "Excalidraw",
+        "inline": "行内"
+      },
+      "tooltips": {
+        "openMoreSettings": "打开更多设置"
+      }
+    },
+
+    "renderer": {
+      "addProfile": "添加配置",
+      "newProfileName": "新配置",
+      "baseColor": "基础颜色",
+      "baseColorDesc": "将 SVG 中的黑色替换为其他颜色。适用于深色主题。禁用 <code>使用主题文本颜色</code> 后此项才会生效。",
+      "deleteProfile": "删除配置",
+      "enableBackgroundRendering": "启用后台渲染",
+      "enableBackgroundRenderingDesc": "界面将不再卡顿，但可能与导出或渲染相关的插件冲突。（通过 Markdown 菜单导出为 PDF 时会自动禁用）",
+      "fitNoteWidthProfiles": "适配笔记宽度配置",
+      "fitToNoteWidthProfile": "适配笔记宽度所用配置",
+      "fitToNoteWidthProfileDesc": "计算“适配笔记宽度”时使用的配置。选择一个预设或 Live 以检测编辑器宽度。",
+      "inlineFullHeight": "行内公式全高显示",
+      "inlineFullHeightDesc": "以 Typst 显示样式渲染普通行内公式，同时保持行内。适用于分式、分段函数和大型运算符。",
+      "liveReload": "实时重载",
+      "liveReloadDesc": "当笔记文件发生变化时，刷新该笔记的阅读视图。实时预览本来就只会重新渲染正在编辑的公式。",
+      "offset": "偏移",
+      "offsetDesc": "行内公式的垂直偏移。外观可能因 Obsidian 使用的字体而异。请按需调整。",
+      "patchPdfExport": "修补 PDF 导出",
+      "patchPdfExportDesc": "在 PDF 导出期间临时禁用“使用主题文本颜色”并改用基础颜色，以修复深色主题下的白色背景问题。",
+      "profileNamePlaceholder": "名称",
+      "profileWidthPlaceholder": "宽度",
+      "preRenderOnStartup": "启动时预热当前笔记",
+      "preRenderOnStartupDesc": "启动后在后台将当前笔记中的每个公式编译到 SVG 缓存中。复用现有 worker，因此不会增加内存。",
+      "profiles": "配置",
+      "profilesDesc": "添加或删除自定义宽度配置。",
+      "refreshAll": "刷新全部公式",
+      "refreshAllButton": "全部刷新",
+      "refreshAllDesc": "清空 SVG 缓存并重建所有已打开的 Markdown 视图。更改全局设置后请使用此项。",
+      "useThemeTextColor": "使用主题文本颜色",
+      "useThemeTextColorDesc": "将 Obsidian 的文本颜色用作基础颜色。"
+    },
+
+    "tabs": {
+      "advanced": "高级",
+      "compiler": "编译器",
+      "editor": "编辑器",
+      "processor": "处理器",
+      "renderer": "渲染器"
+    }
+  },
+
+  "snippets": {
+    "buttons": {
+      "detail": "详情",
+      "new": "新建",
+      "remove": "删除"
+    },
+    "categoryNew": {
+      "heading": "新建分类"
+    },
+    "categoryRename": {
+      "heading": "重命名分类"
+    },
+    "edit": {
+      "id": "ID",
+      "processorKind": "处理器类型",
+      "scriptMode": "脚本模式",
+      "buttons": {
+        "preview": "预览"
+      },
+      "kindOptions": {
+        "inline": "行内",
+        "display": "显示",
+        "codeblock": "代码块"
+      }
+    },
+    "ext": {
+      "category": "分类",
+      "newCategory": "新建"
+    },
+    "namePlaceholder": "名称",
+    "tooltips": {
+      "new": "新建",
+      "rename": "重命名"
+    },
+    "uncategorized": "未分类"
+  },
+
+  "views": {
+    "typstPreview": {
+      "fitToPage": "适配页面",
+      "buttons": {
+        "reset": "重置"
+      }
+    },
+    "typstText": {
+      "displayText": "Typst 文本",
+      "actions": {
+        "export": "导出",
+        "exportAsPdf": "导出为 PDF",
+        "openAsPreview": "打开为预览"
+      }
+    },
+    "typstTools": {
+      "displayText": "Typst 工具",
+      "converter": {
+        "cetzTikz": "CeTZ/TikZ",
+        "latexPlaceholder": "LaTeX",
+        "markupDocument": "标记文档",
+        "mathEquation": "数学公式",
+        "typstPlaceholder": "Typst",
+        "buttons": {
+          "copy": "复制"
+        }
+      },
+      "dropdown": {
+        "converter": "转换器",
+        "detypify": "Detypify",
+        "packages": "包",
+        "quiver": "Quiver",
+        "snippets": "片段",
+        "symbols": "符号"
+      },
+      "tooltips": {
+        "reload": "重新加载"
+      }
+    }
+  }
+}
