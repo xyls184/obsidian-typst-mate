@@ -69,6 +69,11 @@ SVG 依赖 Typst 版本、内置/系统字体、CJK fallback、preamble、frontm
 - 完善语言检测逻辑，自动适配 Obsidian 界面语言设置（`zh`）、`window.moment.locale()`、系统与浏览器语言（`zh-CN`、`zh-Hans` 等）。
 - 修复 Linter 等模块的国际化实例引用，并在一致性测试中开启多语言 key 校验。
 
+## 8. LaTeX 公式转 Typst
+
+- **自动粘贴转换**（设置中可开关）：粘贴文本时自动识别其中的 LaTeX 公式并转换为 Typst 语法；自动避开代码块、代码段及 `$10-$20` 等货币与普通美元符号，异常时安全降级为原生粘贴。
+- **侧栏一键转换**：在侧边栏（Ribbon）提供转换按钮，支持选区转换、当前光标公式转换或全笔记 LaTeX 公式一键替换（单步撤销，不影响已有 Typst 公式）。
+
 ## 为什么要保留在 fork，而不是直接给上游提 PR
 
 - 上述改动实际包含三个独立部分：Typst 升级、CJK fallback、行内公式行为（宽松解析/基线/全高）。
@@ -84,6 +89,6 @@ SVG 依赖 Typst 版本、内置/系统字体、CJK fallback、preamble、frontm
 - `wasm-bindgen --target web --out-dir pkg --out-name typst_wasm wasm/target/wasm32-unknown-unknown/release/typst_wasm.wasm`
 - `bun scripts/patch-wasm-glue.ts`
 - `cp pkg/typst_wasm_bg.wasm typst.wasm && bun run build`
-- `bun test`：79 pass / 0 fail
+- `bun test`：99 pass / 0 fail
 - `tsc --noEmit`：通过
 - 已在 Obsidian 1.14.4（Windows）实测 live preview、reading view、PDF/SVG/PNG 导出、代码块处理器和 jump。

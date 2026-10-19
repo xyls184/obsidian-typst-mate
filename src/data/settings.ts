@@ -36,6 +36,10 @@ export interface Settings {
   moveToEndOfMathBlockBeforeExiting: boolean;
   disableMacro: boolean;
 
+  // LaTeX 変換
+  autoConvertLatexOnPaste: boolean;
+  showConvertRibbonIcon: boolean;
+
   /* レンダリング */
   enableBackgroundRendering: boolean; // プラグインのリロードが必要
   patchPDFExport: boolean;
@@ -99,6 +103,10 @@ export const DEFAULT_SETTINGS: Settings = {
   preferInlineExitForSingleLineDisplayMath: true,
   moveToEndOfMathBlockBeforeExiting: false,
   disableMacro: false,
+
+  // LaTeX 変換
+  autoConvertLatexOnPaste: false,
+  showConvertRibbonIcon: true,
 
   /* レンダリング */
   enableBackgroundRendering: true,

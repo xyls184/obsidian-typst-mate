@@ -213,4 +213,29 @@ function addActionSettings(plugin: ObsidianTypstMate, containerEl: HTMLElement) 
         plugin.saveSettings();
       });
     });
+
+  new Setting(containerEl).setName(t('settings.editor.latexConversion')).setHeading();
+
+  new Setting(containerEl)
+    .setName(t('settings.editor.autoConvertLatexOnPaste'))
+    .setDesc(t('settings.editor.autoConvertLatexOnPasteDesc'))
+    .addToggle((toggle) => {
+      toggle.setValue(plugin.settings.autoConvertLatexOnPaste ?? DEFAULT_SETTINGS.autoConvertLatexOnPaste);
+      toggle.onChange((value) => {
+        plugin.settings.autoConvertLatexOnPaste = value;
+        plugin.saveSettings();
+      });
+    });
+
+  new Setting(containerEl)
+    .setName(t('settings.editor.showConvertRibbonIcon'))
+    .setDesc(t('settings.editor.showConvertRibbonIconDesc'))
+    .addToggle((toggle) => {
+      toggle.setValue(plugin.settings.showConvertRibbonIcon ?? DEFAULT_SETTINGS.showConvertRibbonIcon);
+      toggle.onChange((value) => {
+        plugin.settings.showConvertRibbonIcon = value;
+        plugin.saveSettings();
+        plugin.updateRibbonIcon();
+      });
+    });
 }
