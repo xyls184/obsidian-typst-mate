@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use js_sys::{ArrayBuffer, Uint8Array};
 use rustc_hash::FxHashMap;
 use serde_wasm_bindgen::to_value;
@@ -6,15 +8,18 @@ use tylax::{
     tikz::{convert_cetz_to_tikz, convert_tikz_to_cetz},
     typst_document_to_latex, typst_to_latex,
 };
+use typst_layout::PagedDocument;
 use wasm_bindgen::prelude::*;
 
 use typst::{
     World,
     diag::Warned,
     foundations::Bytes,
-    layout::{Abs, PageRanges, PagedDocument, Point},
+    introspection::PagedPosition,
+    layout::{Abs, PageRanges, Point},
+    model::Document,
     syntax::{
-        FileId, VirtualPath,
+        FileId, RootedPath, VirtualPath, VirtualRoot,
         package::{PackageSpec, PackageVersion},
     },
     text::FontInfo,
@@ -46,6 +51,10 @@ impl Typst {
     pub fn new(basepath: String, fetch: js_sys::Function, fontsize: f64, offset: f64) -> Self {
         #[cfg(debug_assertions)]
         console_error_panic_hook::set_once();
+
+        // Typst 0.15 rejects backslashes in virtual paths. The base path is a
+        // real host path on desktop, so normalize it for virtual files.
+        let basepath = basepath.replace('\\', "/");
 
         Self {
             world: WasmWorld::new(fetch, fontsize),
@@ -112,13 +121,13 @@ impl Typst {
 
                 self.world.add_package_file(spec, vpath, bytes);
             } else {
-                self.world.add_file_bytes(VirtualPath::new(rpath), bytes);
+                self.world.add_file_bytes(VirtualPath::new(rpath).unwrap(), bytes);
             }
         }
 
         for (path, text) in files {
             self.world.add_file_text(
-                VirtualPath::new(format!("{}/{}", self.basepath, path)),
+                VirtualPath::new(format!("{}/{}", self.basepath, path)).unwrap(),
                 text,
             );
         }
@@ -134,9 +143,12 @@ impl Typst {
     }
 
     pub fn list_fonts(&self) -> JsValue {
-        let families = self.world.book().families();
-        let infos_ser: Vec<font::FontInfoSer> = families
-            .flat_map(|(_, infos)| infos.map(Into::into))
+        let book = self.world.book();
+        let infos_ser: Vec<font::FontInfoSer> = book
+            .families()
+            .flat_map(|(_, indexes)| indexes)
+            .filter_map(|index| book.info(index))
+            .map(Into::into)
             .collect();
 
         to_value(&infos_ser).unwrap_or(JsValue::NULL)
@@ -151,12 +163,20 @@ impl Typst {
 
         to_value(&infos).unwrap_or(JsValue::NULL)
     }
+
+    /// Returns the first loaded font family covering CJK codepoints, if any.
+    pub fn find_cjk_family(&self) -> JsValue {
+        match self.world.cjk_family() {
+            Some(family) => JsValue::from_str(&family),
+            None => JsValue::NULL,
+        }
+    }
 }
 
 #[wasm_bindgen]
 impl Typst {
     fn update_source(&mut self, vpath: VirtualPath, code: &str) {
-        let file_id = FileId::new(None, vpath.clone());
+        let file_id = FileId::new(RootedPath::new(VirtualRoot::Project, vpath.clone()));
         let result = self.world.source(file_id);
 
         match result {
@@ -186,22 +206,25 @@ impl Typst {
             self.last_id = id.to_string();
 
             self.update_source(
-                VirtualPath::new(format!("{}{}{}_{}.typ", self.basepath, ndir, kind, id)),
+                VirtualPath::new(format!("{}{}{}_{}.typ", self.basepath, ndir, kind, id)).unwrap(),
                 code,
             );
         }
         let Warned { output, warnings } = typst::compile::<PagedDocument>(&mut self.world);
 
         match output {
-            Ok(mut document) => {
-                if document.pages.is_empty() {
+            Ok(document) => {
+                if document.pages().is_empty() {
                     return Err(JsValue::from_str("document has no pages"));
                 }
 
-                let page = &mut document.pages[0];
-                if None == page.fill_or_transparent() {
-                    page.fill = typst::foundations::Smart::Custom(None);
-                };
+                let mut pages = document.pages().to_vec();
+                if None == pages[0].fill_or_transparent() {
+                    pages[0].fill = typst::foundations::Smart::Custom(None);
+                }
+                let document = PagedDocument::new(pages.into(), document.info().clone());
+
+                let page = &document.pages()[0];
                 let frame = &page.frame;
                 let descent = if kind == "inline" {
                     (match utils::find_baseline(frame, Abs::zero()) {
@@ -212,7 +235,7 @@ impl Typst {
                     0.0
                 };
 
-                let svg = typst_svg::svg(&page)
+                let svg = typst_svg::svg(page, &typst_svg::SvgOptions::default())
                     .replace("#000000", "var(--typst-base-color)")
                     .replacen(
                         "<svg class",
@@ -241,17 +264,17 @@ impl Typst {
     // プレビュー用
     pub fn svgp(&mut self, ndir: &str, filename: &str, code: &str) -> Result<JsValue, JsValue> {
         self.update_source(
-            VirtualPath::new(format!("{}{}{}", self.basepath, ndir, filename)),
+            VirtualPath::new(format!("{}{}{}", self.basepath, ndir, filename)).unwrap(),
             code,
         );
         self.world.update_now();
         let Warned { output, warnings } = typst::compile::<PagedDocument>(&mut self.world);
 
         match output {
-            Ok(mut document) => {
+            Ok(document) => {
                 let mut svgs = Vec::new();
-                for page in &mut document.pages {
-                    let svg = typst_svg::svg(page);
+                for page in document.pages() {
+                    let svg = typst_svg::svg(page, &typst_svg::SvgOptions::default());
                     svgs.push(svg);
                 }
                 self.last_document = Some(document);
@@ -273,10 +296,11 @@ impl Typst {
     pub fn jump_from_click(&self, x: f64, y: f64) -> JsValue {
         match &self.last_document {
             Some(document) => {
-                let frame = &document.pages[0].frame;
-                let point = Point::new(Abs::pt(x), Abs::pt(y));
-                let point = typst_ide::jump_from_click(&self.world, document, frame, point);
-                match point {
+                let position = PagedPosition {
+                    page: NonZeroUsize::new(1).unwrap(),
+                    point: Point::new(Abs::pt(x), Abs::pt(y)),
+                };
+                match typst_ide::jump_from_click(&self.world, document, &position) {
                     Some(point) => {
                         let jump_ser = jump::JumpSer::from_jump(&point, &self.world);
                         to_value(&jump_ser).unwrap_or(JsValue::NULL)
@@ -291,13 +315,17 @@ impl Typst {
     pub fn jump_from_click_p(&self, page: usize, x: f64, y: f64) -> JsValue {
         match &self.last_document {
             Some(document) => {
-                if document.pages.len() <= page {
+                if document.pages().len() <= page {
                     return JsValue::NULL;
                 }
-                let frame = &document.pages[page].frame;
-                let point = Point::new(Abs::pt(x), Abs::pt(y));
-                let point = typst_ide::jump_from_click(&self.world, document, frame, point);
-                match point {
+                let Some(page) = NonZeroUsize::new(page + 1) else {
+                    return JsValue::NULL;
+                };
+                let position = PagedPosition {
+                    page,
+                    point: Point::new(Abs::pt(x), Abs::pt(y)),
+                };
+                match typst_ide::jump_from_click(&self.world, document, &position) {
                     Some(point) => {
                         let jump_ser = jump::JumpSer::from_jump(&point, &self.world);
                         to_value(&jump_ser).unwrap_or(JsValue::NULL)
@@ -343,24 +371,24 @@ impl Typst {
 
         self.world.update_now();
         self.update_source(
-            VirtualPath::new(format!("{}{}{}", self.basepath, ndir, filename)),
+            VirtualPath::new(format!("{}{}{}", self.basepath, ndir, filename)).unwrap(),
             code,
         );
         let Warned { output, warnings } = typst::compile::<PagedDocument>(&mut self.world);
 
         match output {
             Ok(mut document) => {
-                document.info.title.get_or_insert_with(|| filename.into());
+                document.info_mut().title.get_or_insert_with(|| filename.into());
 
                 let mut options = typst_pdf::PdfOptions::default();
                 options.tagged = options_ser.tagged;
                 if let Some(ident) = &options_ser.ident {
-                    options.ident = typst::foundations::Smart::Custom(ident.as_str());
+                    options.ident = typst::foundations::Smart::Custom(ident.clone());
                 }
 
                 if !options_ser.standards.is_empty() {
                     options.standards = typst_pdf::PdfStandards::new(&options_ser.standards)
-                        .map_err(|e| JsValue::from_str(&e))?;
+                        .map_err(|e| JsValue::from_str(e.message().as_str()))?;
                 }
 
                 if let Some(timestamp) = options_ser.timestamp {
@@ -428,7 +456,7 @@ impl Typst {
 
         self.world.update_now();
         self.update_source(
-            VirtualPath::new(format!("{}{}{}", self.basepath, ndir, filename)),
+            VirtualPath::new(format!("{}{}{}", self.basepath, ndir, filename)).unwrap(),
             code,
         );
         let Warned { output, warnings } = typst::compile::<PagedDocument>(&mut self.world);
@@ -440,13 +468,13 @@ impl Typst {
                     .as_ref()
                     .and_then(|s| utils::parse_page_ranges(s));
                 let mut svgs = Vec::new();
-                for (i, page) in document.pages.iter().enumerate() {
+                for (i, page) in document.pages().iter().enumerate() {
                     if let Some(ranges) = &page_ranges {
                         if !ranges.includes_page_index(i) {
                             continue;
                         }
                     }
-                    let svg = typst_svg::svg(page);
+                    let svg = typst_svg::svg(page, &typst_svg::SvgOptions::default());
                     svgs.push(svg);
                 }
                 svgr::svgr(svgs, warnings, &self.world)
@@ -473,7 +501,7 @@ impl Typst {
 
         self.world.update_now();
         self.update_source(
-            VirtualPath::new(format!("{}{}{}", self.basepath, ndir, filename)),
+            VirtualPath::new(format!("{}{}{}", self.basepath, ndir, filename)).unwrap(),
             code,
         );
         let Warned { output, warnings } = typst::compile::<PagedDocument>(&mut self.world);
@@ -486,13 +514,19 @@ impl Typst {
                     .as_ref()
                     .and_then(|s| utils::parse_page_ranges(s));
                 let mut images = Vec::new();
-                for (i, page) in document.pages.iter().enumerate() {
+                for (i, page) in document.pages().iter().enumerate() {
                     if let Some(ranges) = &page_ranges {
                         if !ranges.includes_page_index(i) {
                             continue;
                         }
                     }
-                    let pixmap = typst_render::render(page, ppi / 72.0);
+                    let pixmap = typst_render::render(
+                        page,
+                        &typst_render::RenderOptions {
+                            pixel_per_pt: (ppi as f64 / 72.0).into(),
+                            ..Default::default()
+                        },
+                    );
                     let png = pixmap
                         .encode_png()
                         .map_err(|e| JsValue::from_str(&e.to_string()))?;

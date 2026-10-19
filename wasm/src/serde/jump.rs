@@ -28,8 +28,11 @@ impl JumpSer {
     {
         match jump {
             Jump::File(id, pos) => {
-                let package = id.package().map(|spec| spec.to_string());
-                let path = id.vpath().as_rootless_path().to_string_lossy().to_string();
+                let package = match id.root() {
+                    typst::syntax::VirtualRoot::Package(spec) => Some(spec.to_string()),
+                    typst::syntax::VirtualRoot::Project => None,
+                };
+                let path = id.vpath().get_without_slash().to_string();
 
                 let source = world.source(*id).unwrap();
                 let pos = source.lines().byte_to_utf16(*pos).unwrap_or(0);
@@ -47,7 +50,7 @@ impl JumpSer {
         }
     }
 
-    pub fn from_position(pos: typst::layout::Position) -> Self {
+    pub fn from_position(pos: typst::introspection::PagedPosition) -> Self {
         JumpSer::Position {
             page: pos.page.get(),
             x: pos.point.x.to_pt(),

@@ -7,12 +7,14 @@ use send_wrapper::SendWrapper;
 use wasm_bindgen::{JsCast, JsValue};
 
 use typst::foundations::{
-    Bytes, Content, Datetime, Element, NativeElement, Property, Recipe, Selector, Smart, Style,
-    Styles, Transformation, Value, func,
+    Bytes, Content, Datetime, Duration, Element, NativeElement, Property, Recipe, Selector, Smart,
+    Style, Styles, Transformation, Value, func,
 };
 
 use typst::layout::{Abs, BoxElem, Em, Length, Rel, Sides};
-use typst::syntax::{FileId, Source, Span, VirtualPath, package::PackageSpec};
+use typst::syntax::{
+    FileId, RootedPath, Source, Span, VirtualPath, VirtualRoot, package::PackageSpec,
+};
 use typst::text::{Font, FontBook, FontList, SmallcapsElem, TextElem};
 use typst::{
     Library, LibraryExt, World,
@@ -40,7 +42,7 @@ pub struct WasmWorld {
 impl WasmWorld {
     pub fn new(read: js_sys::Function, fontsize: f64) -> Self {
         // ファイルシステムを設定
-        let main = FileId::new(None, VirtualPath::new("main.typ"));
+        let main = FileId::new(RootedPath::new(VirtualRoot::Project, VirtualPath::new("main.typ").unwrap()));
         let mut slots = FxHashMap::default();
         slots.insert(main, FileSlot::new_from_text(main, "".into()));
 
@@ -140,21 +142,21 @@ impl WasmWorld {
 
     pub fn add_file_text(&self, vpath: VirtualPath, text: String) {
         let mut m = self.slots.lock().unwrap();
-        let file_id = FileId::new(None, vpath);
+        let file_id = FileId::new(RootedPath::new(VirtualRoot::Project, vpath));
 
         m.insert(file_id, FileSlot::new_from_text(file_id, text));
     }
 
     pub fn add_file_bytes(&self, vpath: VirtualPath, bytes: Vec<u8>) {
         let mut m = self.slots.lock().unwrap();
-        let file_id = FileId::new(None, vpath);
+        let file_id = FileId::new(RootedPath::new(VirtualRoot::Project, vpath));
 
         m.insert(file_id, FileSlot::new_from_bytes(file_id, bytes));
     }
 
     pub fn add_package_file(&mut self, spec: PackageSpec, vpath: &str, bytes: Vec<u8>) {
         let mut m = self.slots.lock().unwrap();
-        let file_id = FileId::new(Some(spec.clone()), VirtualPath::new(vpath));
+        let file_id = FileId::new(RootedPath::new(VirtualRoot::Package(spec.clone()), VirtualPath::new(vpath).unwrap()));
         m.insert(file_id, FileSlot::new_from_bytes(file_id, bytes));
 
         self.packages.insert(spec);
@@ -169,6 +171,14 @@ impl WasmWorld {
             self.book.push(f.info().clone());
             self.fonts.push(f);
         }
+    }
+
+    /// Find a loaded font family that provides CJK glyphs.
+    pub fn cjk_family(&self) -> Option<String> {
+        self.fonts
+            .iter()
+            .find(|f| f.info().coverage.contains(0x4E2D)) // 中
+            .map(|f| f.info().family.clone())
     }
 
     fn fetch(&self, rpath: String) -> Result<JsValue, JsValue> {
@@ -214,21 +224,20 @@ impl WasmWorld {
         let mut m = self.slots.lock().unwrap();
 
         if m.get(&id).map_or(true, |slot| slot.bytes().is_err()) {
-            let result = match id.package() {
-                Some(spec) => self.fetch_file(
+            let result = match id.root() {
+                VirtualRoot::Package(spec) => self.fetch_file(
                     format!(
                         "@{}/{}/{}/{}",
                         spec.namespace,
                         spec.name,
                         spec.version,
-                        id.vpath().as_rootless_path().to_str().unwrap()
+                        id.vpath().get_without_slash()
                     ),
-                    Some(&spec),
+                    Some(spec),
                 ),
-                None => self.fetch_file(
-                    id.vpath().as_rooted_path().to_str().unwrap().to_string(),
-                    None,
-                ),
+                VirtualRoot::Project => {
+                    self.fetch_file(id.vpath().get_with_slash().to_string(), None)
+                }
             };
 
             m.insert(id, FileSlot::new_from_result(id, result));
@@ -280,13 +289,12 @@ impl World for WasmWorld {
         Some(self.fonts[index].clone())
     }
 
-    fn today(&self, offset: Option<i64>) -> Option<Datetime> {
+    fn today(&self, offset: Option<Duration>) -> Option<Datetime> {
         let local_datetime = match offset {
             None => self.now.with_timezone(&Local).fixed_offset(),
-            Some(hours) => {
-                let seconds = i32::try_from(hours).ok()?.checked_mul(3600)?;
-                self.now.with_timezone(&FixedOffset::east_opt(seconds)?)
-            }
+            Some(duration) => self
+                .now
+                .with_timezone(&FixedOffset::east_opt(duration.seconds() as i32)?),
         };
 
         let year = local_datetime.year();

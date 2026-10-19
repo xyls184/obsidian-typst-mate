@@ -1,7 +1,7 @@
 {
 	"name": "typst-mate",
 	"scripts": {
-		"wasm": "wasm-pack build wasm --target web --release --out-dir ../pkg",
+		"wasm": "wasm-pack build wasm --target web --release --out-dir ../pkg && bun scripts/patch-wasm-glue.ts",
 		"build": "bunx --bun vite build",
 		"check": "bunx biome check --write",
 		"test": "bun test",

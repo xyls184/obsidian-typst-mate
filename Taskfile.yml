@@ -36,6 +36,7 @@ tasks:
         sh: "bun scripts/version.ts --type mock"
     cmds:
       - wasm-pack build wasm --target web --dev --out-dir ../pkg
+      - bun scripts/patch-wasm-glue.ts
       - rm -f '{{.PLUGIN_DIR}}/'*.wasm
       - mv './pkg/typst_wasm_bg.wasm' '{{.PLUGIN_DIR}}/typst-{{.version}}.wasm'
     desc: "Build WASM file and copy to plugin directory"
@@ -46,6 +47,7 @@ tasks:
         sh: "bun scripts/version.ts --type mock"
     cmds:
       - wasm-pack build wasm --target web --release --out-dir ../pkg
+      - bun scripts/patch-wasm-glue.ts
       - rm -f '{{.PLUGIN_DIR}}/'*.wasm
       - mv './pkg/typst_wasm_bg.wasm' '{{.PLUGIN_DIR}}/typst-{{.version}}.wasm'
     desc: "Build WASM file and copy to plugin directory"

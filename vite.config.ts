@@ -13,6 +13,17 @@ export default defineConfig(async ({ mode }) => {
   return {
     plugins: [
       tsconfigPaths(),
+      {
+        // The worker always supplies a compiled WebAssembly.Module, so the
+        // generated glue's default URL must not pull the 45 MB wasm into the
+        // inline worker bundle as a data URL.
+        name: 'strip-wasm-default-url',
+        enforce: 'pre',
+        transform(code, id) {
+          if (!/[\\/]pkg[\\/]typst_wasm\.js$/.test(id)) return;
+          return code.replace(/new URL\((['"])typst_wasm_bg\.wasm\1, import\.meta\.url\)/g, 'undefined');
+        },
+      },
       viteStaticCopy({
         targets: prod
           ? [
