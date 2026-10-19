@@ -74,6 +74,13 @@ export type Processors = InlineProcessor[] | DisplayProcessor[] | CodeblockProce
 export const ProcessorKindTokens = ['inline', 'display', 'codeblock', 'excalidraw'] as const;
 export type ProcessorKind = (typeof ProcessorKindTokens)[number];
 
+/**
+ * Display-style math that still participates in the inline flow. `box` keeps
+ * the equation on the text line; the spaces inside `$ ... $` select display
+ * style, so `cases`, fractions, and large operators keep their full size.
+ */
+export const FULL_HEIGHT_INLINE_FORMAT = '#set page(margin: (x: 0pt, y: 0.3125em))\n#box($ {CODE} $)';
+
 export const DefaultNewInlineProcessor: InlineProcessor = {
   id: 'new',
   renderingEngine: RenderingEngine.TypstSVG,

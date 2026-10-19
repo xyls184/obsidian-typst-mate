@@ -47,9 +47,15 @@ Obsidian 只把闭合 `$` 前没有空格的单行 `$...$` 识别为行内公式
 - `\$` 按转义美元符号处理；没有其他启发式规则。
 - 只支持单行。跨行的 `$...$` 仍然不会被识别，请改用 `$$...$$` 显示公式。
 
+### 4. 行内基线修复与全高公式
+
+- 修复 Typst 0.15 下根 `<svg>` 不再带 `class` 导致 baseline/descent 没有注入的问题。
+- `middle` 样式现在使用 Typst 计算出的基线，不再用 CSS `vertical-align: middle` 覆盖。
+- 新增 Renderer 设置 **Full-height inline math**：用 `#box($ {CODE} $)` 让行内分式、`cases`、求和等保持 display 尺寸，同时仍留在文字行内。
+
 ### 为什么要保留在 fork，而不是直接给上游提 PR
 
-- 上述改动实际包含三个独立部分：Typst 升级、CJK fallback、宽松行内公式。
+- 上述改动实际包含三个独立部分：Typst 升级、CJK fallback、行内公式行为（宽松解析/基线/全高）。
 - 上游 `CONTRIBUTING.md` 要求在提 PR 前先开 issue。
 - 上游存在 `3.0.0` 分支，已经改用 git 版 typst 和不同架构；0.15.1 升级应该先确认目标分支。
 - CJK 自动加载系统字体、宽松行内公式都涉及行为变更，需要原作者先确认是否愿意维护。
@@ -104,9 +110,19 @@ Obsidian only recognizes single-line `$...$` as inline math when the closing `$`
 - Treats `\$` as an escaped dollar; no other heuristics are applied.
 - Supports single-line spans only. Multi-line `$...$` is still not recognized; use `$$...$$` for display math.
 
+### 4. Inline baseline and full-height formulas
+
+- Fixed the missing baseline/descent injection after Typst 0.15 removed the
+  `class` attribute from the root `<svg>` element.
+- The `middle` inline style now uses the Typst-computed baseline instead of
+  overriding it with CSS `vertical-align: middle`.
+- Added a **Full-height inline math** Renderer setting. It uses
+  `#box($ {CODE} $)` so inline fractions, `cases`, sums, etc. keep their
+  display size while remaining in the text flow.
+
 ### Why this stays in the fork instead of an upstream PR
 
-- The work contains three independent parts: the Typst upgrade, the CJK fallback, and relaxed inline math.
+- The work contains three independent parts: the Typst upgrade, the CJK fallback, and inline math behavior (relaxed parsing, baseline, full height).
 - Upstream `CONTRIBUTING.md` requires an issue before a pull request.
 - Upstream has a `3.0.0` branch that already uses a git version of Typst and a different architecture; the target branch for a 0.15.1 upgrade should be confirmed first.
 - Automatically loading system fonts and relaxed inline math are behavior changes that need maintainer approval.
@@ -163,9 +179,19 @@ Obsidian は、閉じる `$` の直前が空白でない単一行の `$...$` の
 - `\$` はエスケープされたドル記号として扱います。その他のヒューリスティックはありません。
 - 単一行のみ対応します。複数行の `$...$` は依然として認識されないため、表示数式には `$$...$$` を使用してください。
 
+### 4. インライン数式のベースラインと全高表示
+
+- Typst 0.15 でルート `<svg>` から `class` 属性がなくなったため、
+  baseline/descent が注入されなくなっていた問題を修正しました。
+- `middle` スタイルは CSS の `vertical-align: middle` で上書きせず、
+  Typst が計算したベースラインを使うようになりました。
+- Renderer 設定に **Full-height inline math** を追加しました。
+  `#box($ {CODE} $)` を使い、インラインの分数・`cases`・総和などを
+  テキスト行内のまま display サイズで表示します。
+
 ### アップストリームに PR を出さない理由
 
-- 変更は「Typst の更新」「CJK フォールバック」「緩和されたインライン数式」の 3 つの独立した内容に分かれます。
+- 変更は「Typst の更新」「CJK フォールバック」「インライン数式の挙動（緩和解析・ベースライン・全高表示）」の 3 つの独立した内容に分かれます。
 - アップストリームの `CONTRIBUTING.md` は、PR の前に issue を作成することを求めています。
 - アップストリームには `3.0.0` ブランチがあり、すでに git 版の Typst と異なるアーキテクチャを採用しています。0.15.1 への更新は、まず対象ブランチを確認する必要があります。
 - システムフォントの自動読み込みと緩和されたインライン数式は挙動の変更であり、メンテナーの承認が必要です。

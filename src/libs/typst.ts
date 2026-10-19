@@ -9,7 +9,7 @@ import { overwriteCustomElements } from '@/utils/custromElementRegistry';
 import { unzip, zip } from '@/utils/packageCompressor';
 import { expandHierarchicalTags } from '@/utils/tags';
 
-import type { Processor, ProcessorKind } from './processor';
+import { FULL_HEIGHT_INLINE_FORMAT, type Processor, type ProcessorKind } from './processor';
 import type { PackageSpec } from './worker';
 
 import './typst.css';
@@ -376,6 +376,15 @@ export default class TypstManager {
 
         kind = 'codeblock';
     }
+
+    if (
+      kind === 'inline' &&
+      this.plugin.settings.inlineFullHeight &&
+      processor.format.includes('${CODE}$') &&
+      !processor.format.includes('math.equation')
+    )
+      processor = { ...processor, format: FULL_HEIGHT_INLINE_FORMAT };
+
     this.beforeProcessor = processor;
     if (processor.renderingEngine === 'mathjax') {
       if (this.plugin.settings.applyProcessorToMathJax) code = processor.format.replace('{CODE}', code);

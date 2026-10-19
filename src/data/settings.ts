@@ -42,6 +42,7 @@ export interface Settings {
   autoBaseColor: boolean;
   baseColor: string;
   offset: number;
+  inlineFullHeight: boolean;
   fitToNoteWidthProfile: string;
   fitToNoteWidthProfiles: WidthProfile[];
 
@@ -103,6 +104,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoBaseColor: true,
   baseColor: '#000000',
   offset: 0.0,
+  inlineFullHeight: false,
   fitToNoteWidthProfile: 'Live',
   fitToNoteWidthProfiles: [
     { name: 'A3', width: '700pt' },

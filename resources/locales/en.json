@@ -285,6 +285,8 @@
       "fitNoteWidthProfiles": "Fit Note Width Profiles",
       "fitToNoteWidthProfile": "Fit To Note Width Profile",
       "fitToNoteWidthProfileDesc": "Profile to use when calculating \"fit to note width\". Select a preset or Live to detect editor width.",
+      "inlineFullHeight": "Full-height inline math",
+      "inlineFullHeightDesc": "Render plain inline formulas in Typst display style while keeping them inline. Useful for fractions, cases, and large operators.",
       "offset": "Offset",
       "offsetDesc": "Vertical offset for inline math. The appearance may vary depending on the font used in Obsidian. Adjust as needed.",
       "patchPdfExport": "Patch PDF Export",

@@ -238,9 +238,9 @@ impl Typst {
                 let svg = typst_svg::svg(page, &typst_svg::SvgOptions::default())
                     .replace("#000000", "var(--typst-base-color)")
                     .replacen(
-                        "<svg class",
+                        "<svg",
                         format!(
-                            "<svg style=\"overflow: visible; vertical-align: {:.2}pt;\" class",
+                            "<svg style=\"overflow: visible; vertical-align: {:.2}pt;\"",
                             descent
                         )
                         .as_str(),

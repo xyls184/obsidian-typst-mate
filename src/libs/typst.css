@@ -21,12 +21,14 @@
   vertical-align: 0pt !important;
 }
 
+/*
+ * `middle` used to override the SVG's computed baseline with CSS
+ * `vertical-align: middle`. That is font-metric dependent and does not line up
+ * with the text baseline. Keep the container on the baseline and let the
+ * injected Typst descent position the formula.
+ */
 .typstmate-inline.typstmate-style-middle {
-  vertical-align: middle;
-}
-
-.typstmate-inline.typstmate-style-middle typstmate-svg svg {
-  vertical-align: 0pt !important;
+  vertical-align: baseline;
 }
 
 /* display */

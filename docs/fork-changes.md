@@ -1,6 +1,7 @@
 # Fork changes
 
-This fork upgrades the embedded Typst engine and fixes two rendering cases.
+This fork upgrades the embedded Typst engine and fixes several rendering
+issues around CJK text, inline math baselines, and full-height formulas.
 
 ## Typst 0.15.1
 
@@ -28,6 +29,33 @@ This fork upgrades the embedded Typst engine and fixes two rendering cases.
   it, Vite's inline worker embeds the 45 MB wasm as base64 and produces a
   60 MB `main.js`. The worker always passes a precompiled module, so the
   default URL is never used.
+
+## Inline baseline
+
+Typst 0.15 removed the `class` attribute from the root `<svg>` element. The
+wasm renderer used to inject the computed baseline as
+`<svg class="..." style="vertical-align: ...">`, so after the upgrade the
+descent was silently lost. The injection now matches `<svg` directly.
+
+`inline-middle` also used to override the SVG's baseline with CSS
+`vertical-align: middle`, which depends on the surrounding font metrics. It now
+keeps the container on the baseline and uses the Typst-computed descent, so
+the formula baseline lines up with the text baseline. The existing `offset`
+setting still applies.
+
+## Full-height inline math
+
+A new Renderer setting, **Full-height inline math**, renders plain inline
+formulas in Typst display style while keeping them in the inline flow:
+
+```typst
+#set page(margin: (x: 0pt, y: 0.3125em))
+#box($ {CODE} $)
+```
+
+This makes `cases`, fractions, sums, and other large operators keep their
+display size instead of the compressed inline size. The setting applies to the
+default plain `${CODE}$` inline processor; custom processors are unchanged.
 
 ## CJK fallback in math
 

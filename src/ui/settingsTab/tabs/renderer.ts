@@ -70,6 +70,18 @@ export function addRendererTab(plugin: ObsidianTypstMate, containerEl: HTMLEleme
       });
     });
 
+  new Setting(containerEl)
+    .setName(t('settings.renderer.inlineFullHeight'))
+    .setDesc(t('settings.renderer.inlineFullHeightDesc'))
+    .addToggle((toggle) => {
+      toggle.setValue(plugin.settings.inlineFullHeight);
+      toggle.onChange(async (value) => {
+        plugin.settings.inlineFullHeight = value;
+        await plugin.saveSettings();
+        plugin.typstManager.refreshView();
+      });
+    });
+
   new Setting(containerEl).setName(t('settings.renderer.fitNoteWidthProfiles')).setHeading();
 
   const profilesContainer = containerEl.createDiv();
