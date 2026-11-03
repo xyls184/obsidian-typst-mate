@@ -30,6 +30,11 @@ issues around CJK text, inline math baselines, and full-height formulas.
   60 MB `main.js`. The worker always passes a precompiled module, so the
   default URL is never used.
 
+  The `wasm-bindgen` CLI must match the `wasm-bindgen` version locked in
+  `wasm/Cargo.lock` (currently `0.2.113`); `wasm-pack` is optional (the
+  `Taskfile.yml` tasks use it). `pkg/` and `typst.wasm` are gitignored, so a
+  fresh clone must regenerate them before `bun run build`.
+
 ## Inline baseline
 
 Typst 0.15 removed the `class` attribute from the root `<svg>` element. The

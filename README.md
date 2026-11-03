@@ -3,6 +3,8 @@
 > **注意**
 >
 > 本项目包含使用 DeepSeek-Flash 进行 AI 辅助编码（vibe coding）的改动。AI 生成内容可能不准确，请自行审查后再使用。
+>
+> **给 agent / 新克隆的构建提示**：请用 `git clone --recurse-submodules`（`typst` 子模块参与 wasm 编译）。仓库不提交 `pkg/` 与 `typst.wasm`，所以首次构建必须**先重建 wasm**（Rust + `wasm32-unknown-unknown` + 与 `wasm/Cargo.lock` 版本一致的 `wasm-bindgen` CLI），再 `bun install && bun run build`；之后只改 TypeScript 时可跳过 wasm 重建。完整命令、工具链版本与部署步骤见 [docs/fork-changes.md](docs/fork-changes.md) 的「Typst 0.15.1」一节。
 
 这是 [azyarashi/obsidian-typst-mate](https://github.com/azyarashi/obsidian-typst-mate) 的个人 fork，仅包含以下改动。
 
@@ -89,10 +91,14 @@ SVG 依赖 Typst 版本、内置/系统字体、CJK fallback、preamble、frontm
 
 ## 构建与验证
 
-- `cargo build --manifest-path wasm/Cargo.toml --target wasm32-unknown-unknown --release --lib`
-- `wasm-bindgen --target web --out-dir pkg --out-name typst_wasm wasm/target/wasm32-unknown-unknown/release/typst_wasm.wasm`
-- `bun scripts/patch-wasm-glue.ts`
-- `cp pkg/typst_wasm_bg.wasm typst.wasm && bun run build`
-- `bun test`：99 pass / 0 fail
-- `tsc --noEmit`：通过
-- 已在 Obsidian 1.14.4（Windows）实测 live preview、reading view、PDF/SVG/PNG 导出、代码块处理器和 jump。
+完整的构建步骤（wasm 重建、`wasm-bindgen` 版本要求、`patch-wasm-glue.ts` 的作用）见 [docs/fork-changes.md](docs/fork-changes.md) 的「Typst 0.15.1」一节。日常命令：
+
+```sh
+bun install
+bun run build   # 产出 dist/main.js、dist/styles.css、dist/typst-<version>.wasm
+bun test        # 114 pass / 0 fail
+```
+
+- **首次克隆或修改 `wasm/` 后**：先按文档重建 `pkg/typst_wasm_bg.wasm` 并 `cp pkg/typst_wasm_bg.wasm typst.wasm`，再执行 `bun run build`。`pkg/` 不在版本库里，缺少 `pkg/typst_wasm.js` 时 `src/libs/worker.ts` 的 import 无法解析，构建会直接失败。
+- **部署**：把 `dist/main.js`、`dist/styles.css`、`dist/manifest.json`、`dist/typst-<version>.wasm` 复制到 `<vault>/.obsidian/plugins/typst-mate/`，然后在 Obsidian 中重载插件。
+- 已在 Obsidian 1.14.5（Windows）实测 live preview、reading view、PDF/SVG/PNG 导出、代码块处理器和 jump。
