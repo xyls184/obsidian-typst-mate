@@ -7,6 +7,7 @@ import pako from 'pako';
 import untar from 'untar-sync';
 
 import init, { type InitOutput, Typst } from '../../pkg/typst_wasm.js';
+import { normalizeTypstMath, preprocessLatexMath } from '../utils/typstMathNormalize';
 
 let main: Main;
 
@@ -95,7 +96,7 @@ export default class $ {
   }
 
   latexeq_to_typm(code: string): string {
-    return this.typst.latexeq_to_typm(code);
+    return normalizeTypstMath(this.typst.latexeq_to_typm(preprocessLatexMath(code)));
   }
 
   typm_to_latexeq(code: string): string {

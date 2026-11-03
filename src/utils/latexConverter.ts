@@ -2,6 +2,58 @@
  * Utilities for detecting and converting LaTeX math formulas to Typst syntax.
  */
 
+import SYMBOLS_BY_NAME from '../data/symbols.json';
+
+/** Typst math identifiers which must never be split into LaTeX italic letters. */
+const TYPST_MATH_NAMES = new Set<string>([
+  // Functions and keywords that are not symbols but are valid in Typst math.
+  ...`abs and arccos arcsin arctan arg attach bb binom block bold cal cancel cases class comma
+    context convolve det dif dim display dot else eq exp floor frac frak gcd gt hat hom if in
+    inline integral italic ker lcm learn let lg limits ln lr lt macron mat max med min minus mod
+    mono norm not op or overbrace overline overrightarrow place plus quad return root round sans
+    scripts sec serif set show sin sinh sqrt st sum sup sym tan tanh text thick thin tilde times
+    tr underline underbrace union upright while without xor`.split(/\s+/),
+  // All Typst symbol names (and their dotted prefixes), e.g. `alpha`, `plus.o`, `arrow.r`.
+  ...Object.values(SYMBOLS_BY_NAME).flatMap(({ name }) => {
+    if (!name) return [];
+    const parts = name.split('.');
+    return parts.map((_, i) => parts.slice(0, i + 1).join('.'));
+  }),
+]);
+
+/**
+ * Checks if math-mode text is LaTeX even though it has no backslash command,
+ * e.g. `CF` or `mc^2` — words that Typst would read as an unknown variable.
+ * Valid Typst names (symbols, functions, `name(...)`, `name.path`) are ignored,
+ * which keeps already converted formulas stable.
+ */
+function hasLatexMathWord(code: string): boolean {
+  const trimmed = code.trim();
+  if (!trimmed) return false;
+  // Typst markers: code interpolation, text strings, raw code.
+  if (/[#"`]/.test(trimmed)) return false;
+
+  for (const match of trimmed.matchAll(/[A-Za-z][A-Za-z0-9]*/g)) {
+    const word = match[0];
+    if (word.length === 1) continue;
+    const start = match.index;
+    const end = start + word.length;
+    const next = trimmed[end];
+    const prev = trimmed[start - 1];
+    // Function call or symbol path (e.g. `mat(...)`, `plus.o`) belongs to Typst.
+    if (next === '(' || next === '.' || prev === '.') continue;
+    if (TYPST_MATH_NAMES.has(word)) continue;
+    return true;
+  }
+
+  return false;
+}
+
+/** Whether a math region should be converted (LaTeX or LaTeX-looking). */
+export function isLikelyLatexMath(code: string): boolean {
+  return isLikelyLatex(code) || hasLatexMathWord(code);
+}
+
 /**
  * Checks if text contains any characters that could possibly begin a LaTeX formula.
  * Fast synchronous pre-check to bypass unneeded processing during paste.
@@ -29,7 +81,7 @@ export function isLikelyLatex(code: string): boolean {
   if (/\\([,;! ]|\{|\}|\\\\)/.test(trimmed)) return true;
 
   // LaTeX exponent / subscript groups with braces: ^{...} or _{...}
-  if (/[\^_]\{[^\}]*\}/.test(trimmed)) return true;
+  if (/[\^_]\{[^}]*\}/.test(trimmed)) return true;
 
   // LaTeX environments: \begin{...}
   if (/\\begin\{[a-zA-Z*]+\}/.test(trimmed)) return true;
@@ -95,16 +147,132 @@ export function isStandaloneLatex(text: string): boolean {
 
   // Equation with math operators and backslash command inside, e.g. "x = \frac{a}{b}"
   if (
-    /^[a-zA-Z0-9\(\)\s]*=/.test(trimmed) &&
-    /\\(frac|sqrt|sum|int|alpha|beta|gamma|pi|sigma|infty|times|cdot|pm|leq|geq|neq)(?![a-zA-Z])/.test(
-      trimmed,
-    )
+    /^[a-zA-Z0-9()\s]*=/.test(trimmed) &&
+    /\\(frac|sqrt|sum|int|alpha|beta|gamma|pi|sigma|infty|times|cdot|pm|leq|geq|neq)(?![a-zA-Z])/.test(trimmed)
   ) {
     const lines = trimmed.split('\n');
     return lines.length <= 15;
   }
 
   return false;
+}
+
+type LatexTokenType = 'protected' | 'display' | 'bracket_disp' | 'env_disp' | 'paren_inline' | 'inline';
+
+interface LatexToken {
+  type: LatexTokenType;
+  raw: string;
+  inner?: string;
+  index: number;
+  length: number;
+}
+
+// Protected regions and math blocks in document order:
+// 1. Fenced code blocks: ```...``` or ~~~...~~~
+// 2. Inline code: `...`
+// 3. HTML comments: <!--...-->
+// 4. Display math: $$...$$
+// 5. LaTeX display math: \[...\]
+// 6. LaTeX environments: \begin{...}...\end{...}
+// 7. LaTeX inline math: \(...\)
+// 8. Markdown inline math: $...$
+const LATEX_TOKEN_REGEX =
+  /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]+`|<!--[\s\S]*?-->|\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\begin\{(?<env>equation|align|gather|alignat|multline|displaymath|eqnarray)\*?\}[\s\S]+?\\end\{\k<env>\*?\}|\\\([\s\S]+?\\\)|\$(?!\s|\$)[^\n$]+?(?<!\s)\$(?!\d))/g;
+
+function scanLatexTokens(text: string): LatexToken[] {
+  const tokens: LatexToken[] = [];
+  LATEX_TOKEN_REGEX.lastIndex = 0;
+
+  for (let match = LATEX_TOKEN_REGEX.exec(text); match !== null; match = LATEX_TOKEN_REGEX.exec(text)) {
+    const raw = match[0];
+    const index = match.index;
+    const length = raw.length;
+
+    if (raw.startsWith('```') || raw.startsWith('~~~') || raw.startsWith('`') || raw.startsWith('<!--')) {
+      tokens.push({ type: 'protected', raw, index, length });
+    } else if (raw.startsWith('$$')) {
+      tokens.push({ type: 'display', raw, inner: raw.slice(2, -2), index, length });
+    } else if (raw.startsWith('\\[')) {
+      tokens.push({ type: 'bracket_disp', raw, inner: raw.slice(2, -2), index, length });
+    } else if (raw.startsWith('\\begin{')) {
+      tokens.push({ type: 'env_disp', raw, inner: raw, index, length });
+    } else if (raw.startsWith('\\(')) {
+      tokens.push({ type: 'paren_inline', raw, inner: raw.slice(2, -2), index, length });
+    } else if (raw.startsWith('$')) {
+      tokens.push({ type: 'inline', raw, inner: raw.slice(1, -1), index, length });
+    }
+  }
+
+  return tokens;
+}
+
+export interface LatexConversionEdit {
+  from: number;
+  to: number;
+  insert: string;
+}
+
+/**
+ * Finds every convertible LaTeX formula in `text` and returns the edits that
+ * replace it with Typst math. Ranges in `exclude` (already converted math
+ * regions) are skipped so the caller can merge both kinds of edits.
+ */
+export async function convertLatexEdits(
+  text: string,
+  convertEq: (latex: string) => Promise<string>,
+  exclude: readonly { from: number; to: number }[] = [],
+): Promise<LatexConversionEdit[]> {
+  if (!text || (!text.includes('$') && !text.includes('\\'))) return [];
+
+  const convertible = scanLatexTokens(text).filter((token) => {
+    if (token.type === 'protected') return false;
+    if (token.type === 'bracket_disp' || token.type === 'env_disp' || token.type === 'paren_inline') {
+      return (token.inner ?? '').trim().length > 0;
+    }
+    if (!token.inner) return false;
+    return isLikelyLatexMath(token.inner);
+  });
+
+  if (convertible.length === 0) return [];
+
+  const conversions = await Promise.all(
+    convertible.map(async (token) => {
+      const source = token.inner!.trim();
+      try {
+        const converted = (await convertEq(source)).trim();
+        return { token, source, converted };
+      } catch (e) {
+        console.error('[typst-mate] equation conversion failed:', e);
+        return { token, source, converted: '' };
+      }
+    }),
+  );
+
+  const edits: LatexConversionEdit[] = [];
+  for (const { token, source, converted } of conversions) {
+    if (!converted || converted === source) continue;
+
+    const from = token.index;
+    const to = token.index + token.length;
+    if (exclude.some((range) => from < range.to && range.from < to)) continue;
+
+    const isDisplay = token.type === 'display' || token.type === 'bracket_disp' || token.type === 'env_disp';
+    edits.push({ from, to, insert: isDisplay ? `$$${converted}$$` : `$${converted}$` });
+  }
+
+  return edits.sort((a, b) => a.from - b.from);
+}
+
+/**
+ * Checks whether a standalone selection (without `$` delimiters) is math worth
+ * converting. Plain prose must not match, so only an actual LaTeX formula or a
+ * single bare word such as `CF` is accepted.
+ */
+export function isStandaloneLatexMath(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (isStandaloneLatex(trimmed)) return true;
+  return /^[A-Za-z][A-Za-z0-9]*$/.test(trimmed) && hasLatexMathWord(trimmed);
 }
 
 /**
@@ -116,107 +284,13 @@ export async function convertLatexInMarkdown(
   text: string,
   convertEq: (latex: string) => Promise<string>,
 ): Promise<{ text: string; count: number }> {
-  if (!text || (!text.includes('$') && !text.includes('\\'))) {
-    return { text, count: 0 };
-  }
+  const edits = await convertLatexEdits(text, convertEq);
 
-  // Token regex matching protected regions and math blocks in order:
-  // 1. Fenced code blocks: ```...``` or ~~~...~~~
-  // 2. Inline code: `...`
-  // 3. HTML comments: <!--...-->
-  // 4. Display math: $$...$$
-  // 5. LaTeX display math: \[...\]
-  // 6. LaTeX environments: \begin{...}...\end{...}
-  // 7. LaTeX inline math: \(...\)
-  // 8. Markdown inline math: $...$
-  const TOKEN_REGEX =
-    /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]+`|<!--[\s\S]*?-->|\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\begin\{(?:equation|align|gather|alignat|multline)\*?\}[\s\S]+?\\end\{\1\*?\}|\\\([\s\S]+?\\\)|\$(?!\s|\$)[^\n$]+?(?<!\s)\$(?!\d))/g;
-
-  interface TokenMatch {
-    type: 'protected' | 'display' | 'bracket_disp' | 'env_disp' | 'paren_inline' | 'inline';
-    raw: string;
-    inner?: string;
-    index: number;
-    length: number;
-  }
-
-  const tokens: TokenMatch[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = TOKEN_REGEX.exec(text)) !== null) {
-    const raw = m[0];
-    const index = m.index;
-    const length = raw.length;
-
-    if (raw.startsWith('```') || raw.startsWith('~~~') || raw.startsWith('`') || raw.startsWith('<!--')) {
-      tokens.push({ type: 'protected', raw, index, length });
-    } else if (raw.startsWith('$$')) {
-      const inner = raw.slice(2, -2);
-      tokens.push({ type: 'display', raw, inner, index, length });
-    } else if (raw.startsWith('\\[')) {
-      const inner = raw.slice(2, -2);
-      tokens.push({ type: 'bracket_disp', raw, inner, index, length });
-    } else if (raw.startsWith('\\begin{')) {
-      tokens.push({ type: 'env_disp', raw, inner: raw, index, length });
-    } else if (raw.startsWith('\\(')) {
-      const inner = raw.slice(2, -2);
-      tokens.push({ type: 'paren_inline', raw, inner, index, length });
-    } else if (raw.startsWith('$')) {
-      const inner = raw.slice(1, -1);
-      tokens.push({ type: 'inline', raw, inner, index, length });
-    }
-  }
-
-  // Filter convertible tokens
-  const convertibleTokens = tokens.filter((t) => {
-    if (t.type === 'protected') return false;
-    if (t.type === 'bracket_disp' || t.type === 'env_disp' || t.type === 'paren_inline') return true;
-    if (!t.inner) return false;
-    return isLikelyLatex(t.inner);
-  });
-
-  if (convertibleTokens.length === 0) {
-    return { text, count: 0 };
-  }
-
-  // Convert all math equations concurrently
-  const conversions = await Promise.all(
-    convertibleTokens.map(async (tok) => {
-      try {
-        const converted = await convertEq(tok.inner!.trim());
-        return { tok, converted: converted.trim() };
-      } catch (e) {
-        console.error('[typst-mate] equation conversion failed:', e);
-        return { tok, converted: null };
-      }
-    }),
-  );
-
-  // Replace tokens from right to left (descending order of index)
   let result = text;
-  let count = 0;
-  conversions.sort((a, b) => b.tok.index - a.tok.index);
-
-  for (const { tok, converted } of conversions) {
-    if (!converted) continue;
-
-    let replacement: string;
-    switch (tok.type) {
-      case 'display':
-      case 'bracket_disp':
-      case 'env_disp':
-        replacement = `$$ ${converted} $$`;
-        break;
-      case 'paren_inline':
-      case 'inline':
-        replacement = `$ ${converted} $`;
-        break;
-      default:
-        continue;
-    }
-
-    result = result.slice(0, tok.index) + replacement + result.slice(tok.index + tok.length);
-    count++;
+  for (let i = edits.length - 1; i >= 0; i--) {
+    const edit = edits[i]!;
+    result = result.slice(0, edit.from) + edit.insert + result.slice(edit.to);
   }
 
-  return { text: result, count };
+  return { text: result, count: edits.length };
 }

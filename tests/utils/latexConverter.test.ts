@@ -3,7 +3,9 @@ import {
   convertLatexInMarkdown,
   hasPossibleLatex,
   isLikelyLatex,
+  isLikelyLatexMath,
   isStandaloneLatex,
+  isStandaloneLatexMath,
   stripMathDelimiters,
 } from '../../src/utils/latexConverter';
 
@@ -105,14 +107,14 @@ describe('latexConverter', () => {
       const input = 'Formula 1: $\\frac{a}{b}$ and formula 2: $$\\sum_{i=1}^n x_i$$.';
       const result = await convertLatexInMarkdown(input, mockConverter);
       expect(result.count).toBe(2);
-      expect(result.text).toBe('Formula 1: $ a/b $ and formula 2: $$ sum_(i = 1)^(n) x_(i) $$.');
+      expect(result.text).toBe('Formula 1: $a/b$ and formula 2: $$sum_(i = 1)^(n) x_(i)$$.');
     });
 
     it('converts LaTeX bracket and paren formats', async () => {
       const input = 'Display: \\[ \\sqrt{x} \\] and inline: \\( \\alpha + \\beta \\)';
       const result = await convertLatexInMarkdown(input, mockConverter);
       expect(result.count).toBe(2);
-      expect(result.text).toBe('Display: $$ sqrt(x) $$ and inline: $ alpha + beta $');
+      expect(result.text).toBe('Display: $$sqrt(x)$$ and inline: $alpha + beta$');
     });
 
     it('preserves code blocks and inline code', async () => {
@@ -134,6 +136,48 @@ describe('latexConverter', () => {
       const result = await convertLatexInMarkdown(input, mockConverter);
       expect(result.count).toBe(0);
       expect(result.text).toBe(input);
+    });
+
+    it('converts bare LaTeX words that Typst would reject', async () => {
+      const input = 'Flags: $CF$, $OF$, $mc^2$, and $x in RR$.';
+      const result = await convertLatexInMarkdown(input, mockConverter);
+      expect(result.text).toBe('Flags: $typst(CF)$, $typst(OF)$, $typst(mc^2)$, and $x in RR$.');
+      expect(result.count).toBe(3);
+    });
+  });
+
+  describe('isStandaloneLatexMath', () => {
+    it('accepts formulas and bare math words', () => {
+      expect(isStandaloneLatexMath('\\frac{a}{b}')).toBe(true);
+      expect(isStandaloneLatexMath('CF')).toBe(true);
+    });
+
+    it('rejects prose and valid Typst names', () => {
+      expect(isStandaloneLatexMath('Hello world')).toBe(false);
+      expect(isStandaloneLatexMath('alpha')).toBe(false);
+      expect(isStandaloneLatexMath('E = mc^2')).toBe(false);
+    });
+  });
+
+  describe('isLikelyLatexMath', () => {
+    it('accepts LaTeX commands and bare letter runs', () => {
+      expect(isLikelyLatexMath('\\frac{a}{b}')).toBe(true);
+      expect(isLikelyLatexMath('CF')).toBe(true);
+      expect(isLikelyLatexMath('Sub')).toBe(true);
+      expect(isLikelyLatexMath('mc^2')).toBe(true);
+      expect(isLikelyLatexMath('{CF}')).toBe(true);
+    });
+
+    it('keeps valid Typst math untouched', () => {
+      expect(isLikelyLatexMath('alpha + beta')).toBe(false);
+      expect(isLikelyLatexMath('x in RR')).toBe(false);
+      expect(isLikelyLatexMath('mat(1, 2; 3, 4)')).toBe(false);
+      expect(isLikelyLatexMath('plus.o')).toBe(false);
+      expect(isLikelyLatexMath('cal(O)')).toBe(false);
+      expect(isLikelyLatexMath('log n')).toBe(false);
+      expect(isLikelyLatexMath('C F')).toBe(false);
+      expect(isLikelyLatexMath('#text[abc]')).toBe(false);
+      expect(isLikelyLatexMath('"abc"')).toBe(false);
     });
   });
 });

@@ -41,10 +41,12 @@ import { TypstToolsView } from './ui/views/typst-tools/typstTools';
 import { exportToPdf } from './utils/export';
 import { createNewFile } from './utils/file';
 import {
+  convertLatexEdits,
   convertLatexInMarkdown,
   hasPossibleLatex,
-  isLikelyLatex,
+  isLikelyLatexMath,
   isStandaloneLatex,
+  isStandaloneLatexMath,
   stripMathDelimiters,
 } from './utils/latexConverter';
 import { zip } from './utils/packageCompressor';
@@ -336,23 +338,21 @@ export default class ObsidianTypstMate extends Plugin {
       const selectedText = cm.state.sliceDoc(selection.from, selection.to);
 
       // Check if selection contains math regions
-      const regions = collectRegions(cm, selection.from, selection.to).filter(
-        (r) => r.kind !== 'codeblock',
-      );
+      const regions = collectRegions(cm, selection.from, selection.to).filter((r) => r.kind !== 'codeblock');
 
       if (regions.length > 0) {
         const changes: { from: number; to: number; insert: string }[] = [];
         for (const region of regions) {
           const content = cm.state.sliceDoc(region.from, region.to);
-          if (isLikelyLatex(content)) {
-            try {
-              const typst = await this.typst.latexeq_to_typm(content.trim());
-              if (typst) {
-                changes.push({ from: region.from, to: region.to, insert: typst });
-              }
-            } catch (err) {
-              console.error('[typst-mate] latex conversion error:', err);
+          const source = content.trim();
+          if (!source || !isLikelyLatexMath(source)) continue;
+          try {
+            const typst = (await this.typst.latexeq_to_typm(source)).trim();
+            if (typst && typst !== source) {
+              changes.push({ from: region.from, to: region.to, insert: typst });
             }
+          } catch (err) {
+            console.error('[typst-mate] latex conversion error:', err);
           }
         }
         if (changes.length > 0) {
@@ -365,9 +365,8 @@ export default class ObsidianTypstMate extends Plugin {
 
       // Try markdown-level conversion in selection
       try {
-        const { text: converted, count } = await convertLatexInMarkdown(
-          selectedText,
-          (latex) => this.typst.latexeq_to_typm(latex),
+        const { text: converted, count } = await convertLatexInMarkdown(selectedText, (latex) =>
+          this.typst.latexeq_to_typm(latex),
         );
         if (count > 0) {
           targetEditor.replaceSelection(converted);
@@ -379,7 +378,7 @@ export default class ObsidianTypstMate extends Plugin {
       }
 
       // If selection is a standalone LaTeX formula without delimiters
-      if (isLikelyLatex(selectedText)) {
+      if (isStandaloneLatexMath(selectedText)) {
         try {
           const converted = await this.typst.latexeq_to_typm(selectedText.trim());
           if (converted) {
@@ -400,10 +399,11 @@ export default class ObsidianTypstMate extends Plugin {
     const activeRegion = getActiveRegion(cm) || getRegionAt(cm, selection.head);
     if (activeRegion && (activeRegion.kind === 'inline' || activeRegion.kind === 'display')) {
       const content = cm.state.sliceDoc(activeRegion.from + activeRegion.skip, activeRegion.to);
-      if (content.trim().length > 0) {
+      const source = content.trim();
+      if (source.length > 0 && isLikelyLatexMath(source)) {
         try {
-          const converted = await this.typst.latexeq_to_typm(content.trim());
-          if (converted) {
+          const converted = (await this.typst.latexeq_to_typm(source)).trim();
+          if (converted && converted !== source) {
             cm.dispatch({
               changes: {
                 from: activeRegion.from + activeRegion.skip,
@@ -421,46 +421,39 @@ export default class ObsidianTypstMate extends Plugin {
     }
 
     // Case 3: Convert all LaTeX formulas in the entire note
-    const allRegions = collectRegions(cm, 0, cm.state.doc.length).filter(
-      (r) => r.kind !== 'codeblock',
-    );
+    const allRegions = collectRegions(cm, 0, cm.state.doc.length).filter((r) => r.kind !== 'codeblock');
 
-    const changes: { from: number; to: number; insert: string }[] = [];
+    const regionChanges: { from: number; to: number; insert: string }[] = [];
     for (const region of allRegions) {
       const content = cm.state.sliceDoc(region.from, region.to);
-      if (isLikelyLatex(content)) {
-        try {
-          const typst = await this.typst.latexeq_to_typm(content.trim());
-          if (typst) {
-            changes.push({ from: region.from, to: region.to, insert: typst });
-          }
-        } catch (err) {
-          console.error('[typst-mate] latex conversion error:', err);
+      const source = content.trim();
+      if (!source || !isLikelyLatexMath(source)) continue;
+      try {
+        const typst = (await this.typst.latexeq_to_typm(source)).trim();
+        if (typst && typst !== source) {
+          regionChanges.push({ from: region.from, to: region.to, insert: typst });
         }
+      } catch (err) {
+        console.error('[typst-mate] latex conversion error:', err);
       }
     }
 
+    // Formulas written with LaTeX delimiters (\[...\], \(...\), environments)
+    // are not parsed as math regions by Obsidian, so convert them in place as
+    // well instead of replacing the whole document (which resets the scroll).
+    const fullDoc = cm.state.doc.toString();
+    let fallbackChanges: { from: number; to: number; insert: string }[] = [];
+    try {
+      fallbackChanges = await convertLatexEdits(fullDoc, (latex) => this.typst.latexeq_to_typm(latex), regionChanges);
+    } catch (err) {
+      console.error('[typst-mate] latex conversion error:', err);
+    }
+
+    const changes = [...regionChanges, ...fallbackChanges].sort((a, b) => a.from - b.from);
     if (changes.length > 0) {
-      changes.sort((a, b) => a.from - b.from);
       cm.dispatch({ changes });
       new Notice(t('notices.latexConvertedCount', { count: changes.length }));
       return;
-    }
-
-    // Check for LaTeX-style \[ ... \] or \( ... \) in the document
-    const fullDoc = cm.state.doc.toString();
-    try {
-      const { text: converted, count } = await convertLatexInMarkdown(
-        fullDoc,
-        (latex) => this.typst.latexeq_to_typm(latex),
-      );
-      if (count > 0) {
-        targetEditor.setValue(converted);
-        new Notice(t('notices.latexConvertedCount', { count }));
-        return;
-      }
-    } catch (err) {
-      console.error('[typst-mate] latex conversion error:', err);
     }
 
     new Notice(t('notices.noLatexFound'));
@@ -677,7 +670,7 @@ export default class ObsidianTypstMate extends Plugin {
 
         if (insideMath) {
           const stripped = stripMathDelimiters(text);
-          if (isLikelyLatex(stripped)) {
+          if (isLikelyLatexMath(stripped)) {
             evt.preventDefault();
             try {
               const converted = await this.typst.latexeq_to_typm(stripped);
@@ -693,9 +686,8 @@ export default class ObsidianTypstMate extends Plugin {
 
         // Check markdown text with embedded LaTeX formulas
         try {
-          const { text: converted, count } = await convertLatexInMarkdown(
-            text,
-            (latex) => this.typst.latexeq_to_typm(latex),
+          const { text: converted, count } = await convertLatexInMarkdown(text, (latex) =>
+            this.typst.latexeq_to_typm(latex),
           );
           if (count > 0) {
             evt.preventDefault();
@@ -843,7 +835,9 @@ export default class ObsidianTypstMate extends Plugin {
     const temporaryEls = document.querySelectorAll('.typstmate-temporary');
     for (const temporaryEl of temporaryEls) temporaryEl.remove();
 
-    document.querySelectorAll('.typstmate-convert-action').forEach((el) => el.remove());
+    document.querySelectorAll('.typstmate-convert-action').forEach((el) => {
+      el.remove();
+    });
     this.ribbonIconEl?.remove();
 
     // 監視を終了
