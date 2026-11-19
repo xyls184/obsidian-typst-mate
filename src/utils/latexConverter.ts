@@ -7,12 +7,15 @@ import SYMBOLS_BY_NAME from '../data/symbols.json';
 /** Typst math identifiers which must never be split into LaTeX italic letters. */
 const TYPST_MATH_NAMES = new Set<string>([
   // Functions and keywords that are not symbols but are valid in Typst math.
-  ...`abs and arccos arcsin arctan arg attach bb binom block bold cal cancel cases class comma
-    context convolve det dif dim display dot else eq exp floor frac frak gcd gt hat hom if in
-    inline integral italic ker lcm learn let lg limits ln lr lt macron mat max med min minus mod
-    mono norm not op or overbrace overline overrightarrow place plus quad return root round sans
-    scripts sec serif set show sin sinh sqrt st sum sup sym tan tanh text thick thin tilde times
-    tr underline underbrace union upright while without xor`.split(/\s+/),
+  ...`abs accent and arccos arccot arccsc arcosh arcsec arcsin arctan arg arsinh artanh attach bb
+    binom block bold boxed cal cancel cases class comma context convolve det dif dim display dot
+    else eq exp floor frac frak gcd gt hat hom if in inline integral italic ker lcm learn let lg
+    limits ln lr lt macron mat max med mid min minus mod mono norm not op or overbrace overbracket
+    overleftarrow overleftrightarrow overline overparen overrightarrow place plus primes quad return
+    root round sans scr script scripts sec serif set show sin sinh sqrt sscript st stretch sum sup
+    sym tan tanh text thick thin tilde times tr underbrace underbracket underleftarrow
+    underleftrightarrow underline underparen underrightarrow union upright vec while wide without
+    xor`.split(/\s+/),
   // All Typst symbol names (and their dotted prefixes), e.g. `alpha`, `plus.o`, `arrow.r`.
   ...Object.values(SYMBOLS_BY_NAME).flatMap(({ name }) => {
     if (!name) return [];
@@ -206,6 +209,18 @@ function scanLatexTokens(text: string): LatexToken[] {
   return tokens;
 }
 
+/**
+ * Preserves leading and trailing whitespace (such as newlines around multi-line
+ * `$$\n...\n$$` blocks) when replacing trimmed math content.
+ */
+export function preserveOuterWhitespace(original: string, replacement: string): string {
+  const trimmed = replacement.trim();
+  if (!trimmed) return replacement;
+  const leading = original.match(/^\s*/)?.[0] ?? '';
+  const trailing = original.match(/\s*$/)?.[0] ?? '';
+  return `${leading}${trimmed}${trailing}`;
+}
+
 export interface LatexConversionEdit {
   from: number;
   to: number;
@@ -257,7 +272,23 @@ export async function convertLatexEdits(
     if (exclude.some((range) => from < range.to && range.from < to)) continue;
 
     const isDisplay = token.type === 'display' || token.type === 'bracket_disp' || token.type === 'env_disp';
-    edits.push({ from, to, insert: isDisplay ? `$$${converted}$$` : `$${converted}$` });
+    let insert: string;
+    if (isDisplay) {
+      if (token.raw.includes('\n')) {
+        if (token.type === 'env_disp') {
+          insert = `$$\n${converted}\n$$`;
+        } else {
+          const inner = token.inner ?? '';
+          const hasOuterNewlines = /^\s*\r?\n/.test(inner) || /\r?\n\s*$/.test(inner);
+          insert = hasOuterNewlines ? `$$${preserveOuterWhitespace(inner, converted)}$$` : `$$\n${converted}\n$$`;
+        }
+      } else {
+        insert = `$$${converted}$$`;
+      }
+    } else {
+      insert = `$${converted}$`;
+    }
+    edits.push({ from, to, insert });
   }
 
   return edits.sort((a, b) => a.from - b.from);

@@ -47,6 +47,7 @@ import {
   isLikelyLatexMath,
   isStandaloneLatex,
   isStandaloneLatexMath,
+  preserveOuterWhitespace,
   stripMathDelimiters,
 } from './utils/latexConverter';
 import { zip } from './utils/packageCompressor';
@@ -349,7 +350,7 @@ export default class ObsidianTypstMate extends Plugin {
           try {
             const typst = (await this.typst.latexeq_to_typm(source)).trim();
             if (typst && typst !== source) {
-              changes.push({ from: region.from, to: region.to, insert: typst });
+              changes.push({ from: region.from, to: region.to, insert: preserveOuterWhitespace(content, typst) });
             }
           } catch (err) {
             console.error('[typst-mate] latex conversion error:', err);
@@ -408,7 +409,7 @@ export default class ObsidianTypstMate extends Plugin {
               changes: {
                 from: activeRegion.from + activeRegion.skip,
                 to: activeRegion.to,
-                insert: converted,
+                insert: preserveOuterWhitespace(content, converted),
               },
             });
             new Notice(t('notices.latexConverted'));
@@ -431,7 +432,7 @@ export default class ObsidianTypstMate extends Plugin {
       try {
         const typst = (await this.typst.latexeq_to_typm(source)).trim();
         if (typst && typst !== source) {
-          regionChanges.push({ from: region.from, to: region.to, insert: typst });
+          regionChanges.push({ from: region.from, to: region.to, insert: preserveOuterWhitespace(content, typst) });
         }
       } catch (err) {
         console.error('[typst-mate] latex conversion error:', err);
@@ -705,7 +706,12 @@ export default class ObsidianTypstMate extends Plugin {
             const stripped = stripMathDelimiters(text);
             const converted = await this.typst.latexeq_to_typm(stripped);
             const isDisplay = text.includes('\n') || /\\begin\{/.test(text) || /^\\\[/.test(text.trim());
-            const result = isDisplay ? `$$ ${converted} $$` : `$ ${converted} $`;
+            const isMultiline = text.includes('\n') || /\\begin\{/.test(text);
+            const result = isDisplay
+              ? isMultiline
+                ? `$$\n${converted.trim()}\n$$`
+                : `$$ ${converted} $$`
+              : `$ ${converted} $`;
             editor.replaceSelection(result);
           } catch (err) {
             console.error('[typst-mate] paste conversion error:', err);

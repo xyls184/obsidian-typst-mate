@@ -6,6 +6,7 @@ import {
   isLikelyLatexMath,
   isStandaloneLatex,
   isStandaloneLatexMath,
+  preserveOuterWhitespace,
   stripMathDelimiters,
 } from '../../src/utils/latexConverter';
 
@@ -144,6 +145,29 @@ describe('latexConverter', () => {
       expect(result.text).toBe('Flags: $typst(CF)$, $typst(OF)$, $typst(mc^2)$, and $x in RR$.');
       expect(result.count).toBe(3);
     });
+
+    it('preserves multiline display math formatting across delimiters and environments', async () => {
+      const input = [
+        '$$\n\\sum_{i=1}^n x_i\n$$',
+        '\\[\n\\sqrt{x}\n\\]',
+        '\\begin{equation}\n\\sqrt{x}\n\\end{equation}',
+      ].join('\n');
+      const result = await convertLatexInMarkdown(input, mockConverter);
+      expect(result.count).toBe(3);
+      expect(result.text).toBe(
+        [
+          '$$\nsum_(i = 1)^(n) x_(i)\n$$',
+          '$$\nsqrt(x)\n$$',
+          '$$\ntypst(\\begin{equation}\n\\sqrt{x}\n\\end{equation})\n$$',
+        ].join('\n'),
+      );
+    });
+  });
+
+  describe('preserveOuterWhitespace', () => {
+    it('keeps leading and trailing newlines and indentation around replaced math', () => {
+      expect(preserveOuterWhitespace('\n  \\frac{a}{b}\n', 'a/b')).toBe('\n  a/b\n');
+    });
   });
 
   describe('isStandaloneLatexMath', () => {
@@ -178,6 +202,8 @@ describe('latexConverter', () => {
       expect(isLikelyLatexMath('C F')).toBe(false);
       expect(isLikelyLatexMath('#text[abc]')).toBe(false);
       expect(isLikelyLatexMath('"abc"')).toBe(false);
+      expect(isLikelyLatexMath('0 <= i <= n,wide - i <= j <= i .')).toBe(false);
+      expect(isLikelyLatexMath('boxed(i^(2) + 1)')).toBe(false);
     });
   });
 });
