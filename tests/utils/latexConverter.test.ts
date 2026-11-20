@@ -162,6 +162,18 @@ describe('latexConverter', () => {
         ].join('\n'),
       );
     });
+
+    it('converts multi-letter juxtaposed terms before parentheses inside Markdown tables', async () => {
+      const tableConverter = async (latex: string) => {
+        if (latex === 'AB(45)') return 'A B (45)';
+        if (latex === 'ABC(85)') return 'A B C (85)';
+        return `typst(${latex})`;
+      };
+      const input = '| **第 1 次** | $A(10)$ 与 $B(35)$ | $AB(45)$ | $ABC(85)$ |';
+      const result = await convertLatexInMarkdown(input, tableConverter);
+      expect(result.count).toBe(2);
+      expect(result.text).toBe('| **第 1 次** | $A(10)$ 与 $B(35)$ | $A B (45)$ | $A B C (85)$ |');
+    });
   });
 
   describe('preserveOuterWhitespace', () => {
@@ -190,6 +202,11 @@ describe('latexConverter', () => {
       expect(isLikelyLatexMath('Sub')).toBe(true);
       expect(isLikelyLatexMath('mc^2')).toBe(true);
       expect(isLikelyLatexMath('{CF}')).toBe(true);
+      expect(isLikelyLatexMath('AB(45)')).toBe(true);
+      expect(isLikelyLatexMath('ABC(85)')).toBe(true);
+      expect(isLikelyLatexMath('ABCDEF(395)')).toBe(true);
+      expect(isLikelyLatexMath('dp(i, j)')).toBe(true);
+      expect(isLikelyLatexMath('AB1(45)')).toBe(true);
     });
 
     it('keeps valid Typst math untouched', () => {
@@ -204,6 +221,15 @@ describe('latexConverter', () => {
       expect(isLikelyLatexMath('"abc"')).toBe(false);
       expect(isLikelyLatexMath('0 <= i <= n,wide - i <= j <= i .')).toBe(false);
       expect(isLikelyLatexMath('boxed(i^(2) + 1)')).toBe(false);
+      expect(isLikelyLatexMath('A(10)')).toBe(false);
+      expect(isLikelyLatexMath('A B (45)')).toBe(false);
+      expect(isLikelyLatexMath('A B(45)')).toBe(false);
+      expect(isLikelyLatexMath('vec(1, 2)')).toBe(false);
+      expect(isLikelyLatexMath('bar(x) + ceil(y)')).toBe(false);
+      expect(isLikelyLatexMath('overshell(x) + undershell(y)')).toBe(false);
+      expect(isLikelyLatexMath('dot.double(x)')).toBe(false);
+      expect(isLikelyLatexMath('mark(x, color: red)')).toBe(false);
+      expect(isLikelyLatexMath('annot(pos: top)[label]')).toBe(false);
     });
   });
 });

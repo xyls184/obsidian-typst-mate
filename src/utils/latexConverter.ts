@@ -9,13 +9,13 @@ const TYPST_MATH_NAMES = new Set<string>([
   // Functions and keywords that are not symbols but are valid in Typst math.
   ...`abs accent and arccos arccot arccsc arcosh arcsec arcsin arctan arg arsinh artanh attach bb
     binom block bold boxed cal cancel cases class comma context convolve det dif dim display dot
-    else eq exp floor frac frak gcd gt hat hom if in inline integral italic ker lcm learn let lg
-    limits ln lr lt macron mat max med mid min minus mod mono norm not op or overbrace overbracket
-    overleftarrow overleftrightarrow overline overparen overrightarrow place plus primes quad return
-    root round sans scr script scripts sec serif set show sin sinh sqrt sscript st stretch sum sup
-    sym tan tanh text thick thin tilde times tr underbrace underbracket underleftarrow
-    underleftrightarrow underline underparen underrightarrow union upright vec while wide without
-    xor`.split(/\s+/),
+    else eq equation exp floor frac frak gcd gt hat hom if in inline integral italic ker lcm learn
+    let lg limits ln lr lt macron mat max med mid min minus mod mono norm not op or overbrace
+    overbracket overleftarrow overleftrightarrow overline overparen overrightarrow overshell place
+    plus primes quad return root round sans scr script scripts sec serif set show sin sinh sqrt
+    sscript st stretch sum sup sym tan tanh text thick thin tilde times tr underbrace
+    underbracket underleftarrow underleftrightarrow underline underparen underrightarrow
+    undershell union upright vec while wide without xor`.split(/\s+/),
   // All Typst symbol names (and their dotted prefixes), e.g. `alpha`, `plus.o`, `arrow.r`.
   ...Object.values(SYMBOLS_BY_NAME).flatMap(({ name }) => {
     if (!name) return [];
@@ -25,10 +25,43 @@ const TYPST_MATH_NAMES = new Set<string>([
 ]);
 
 /**
+ * Returns true if `name(...)` starting at `openParenIdx` uses Typst-specific
+ * call syntax (named arguments like `color: red` or a trailing content block `[...]`).
+ */
+function isTypstCustomCall(code: string, openParenIdx: number): boolean {
+  if (code[openParenIdx] !== '(') return false;
+  let depth = 0;
+  let closeParen = -1;
+
+  for (let i = openParenIdx; i < code.length; i++) {
+    const ch = code[i];
+    if (ch === '\\') {
+      i++;
+      continue;
+    }
+    if (ch === '(') depth++;
+    else if (ch === ')') {
+      depth--;
+      if (depth === 0) {
+        closeParen = i;
+        break;
+      }
+    }
+  }
+
+  if (closeParen === -1) return false;
+  if (code[closeParen + 1] === '[') return true;
+  const args = code.slice(openParenIdx + 1, closeParen);
+  return /(?:^|,)\s*[A-Za-z_][A-Za-z0-9_-]*:\s/.test(args);
+}
+
+/**
  * Checks if math-mode text is LaTeX even though it has no backslash command,
- * e.g. `CF` or `mc^2` — words that Typst would read as an unknown variable.
- * Valid Typst names (symbols, functions, `name(...)`, `name.path`) are ignored,
- * which keeps already converted formulas stable.
+ * e.g. `CF`, `mc^2`, or `AB(45)` — identifiers that Typst would read as an
+ * unknown variable. Recognized Typst names (symbols and built-in functions),
+ * dotted paths (`name.path`), and calls using Typst-specific syntax (named
+ * arguments or trailing content blocks) are ignored so converted formulas
+ * stay stable.
  */
 function hasLatexMathWord(code: string): boolean {
   const trimmed = code.trim();
@@ -43,9 +76,11 @@ function hasLatexMathWord(code: string): boolean {
     const end = start + word.length;
     const next = trimmed[end];
     const prev = trimmed[start - 1];
-    // Function call or symbol path (e.g. `mat(...)`, `plus.o`) belongs to Typst.
-    if (next === '(' || next === '.' || prev === '.') continue;
+    // Dotted symbol/module paths (e.g. `plus.o`, `math.mat(...)`) belong to Typst.
+    if (next === '.' || prev === '.') continue;
     if (TYPST_MATH_NAMES.has(word)) continue;
+    // User-defined Typst calls with named args or trailing content blocks (e.g. `mark(x, color: red)`).
+    if (next === '(' && isTypstCustomCall(trimmed, end)) return false;
     return true;
   }
 

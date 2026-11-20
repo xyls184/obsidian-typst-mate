@@ -315,6 +315,51 @@ export default class ObsidianTypstMate extends Plugin {
     }
   }
 
+  private async collectRangeConversionEdits(
+    cm: any,
+    from: number,
+    to: number,
+  ): Promise<{ from: number; to: number; insert: string }[]> {
+    const regions = collectRegions(cm, from, to).filter((r) => r.kind !== 'codeblock' && r.from >= from && r.to <= to);
+
+    const regionChanges: { from: number; to: number; insert: string }[] = [];
+    for (const region of regions) {
+      const content = cm.state.sliceDoc(region.from, region.to);
+      const source = content.trim();
+      if (!source || !isLikelyLatexMath(source)) continue;
+      try {
+        const typst = (await this.typst.latexeq_to_typm(source)).trim();
+        if (typst && typst !== source) {
+          regionChanges.push({ from: region.from, to: region.to, insert: preserveOuterWhitespace(content, typst) });
+        }
+      } catch (err) {
+        console.error('[typst-mate] latex conversion error:', err);
+      }
+    }
+
+    // Formulas written with LaTeX delimiters (\[...\], \(...\), environments)
+    // or in structures skipped by `collectRegions` are converted in place so
+    // the cursor and scroll position stay intact.
+    const rangeText = cm.state.sliceDoc(from, to);
+    const excludeInRange = regionChanges.map((change) => ({
+      from: change.from - from,
+      to: change.to - from,
+    }));
+    let fallbackChanges: { from: number; to: number; insert: string }[] = [];
+    try {
+      const edits = await convertLatexEdits(rangeText, (latex) => this.typst.latexeq_to_typm(latex), excludeInRange);
+      fallbackChanges = edits.map((edit) => ({
+        from: edit.from + from,
+        to: edit.to + from,
+        insert: edit.insert,
+      }));
+    } catch (err) {
+      console.error('[typst-mate] latex conversion error:', err);
+    }
+
+    return [...regionChanges, ...fallbackChanges].sort((a, b) => a.from - b.from);
+  }
+
   async convertActiveLatexToTypst(editor?: any): Promise<void> {
     let targetEditor = editor;
     if (!targetEditor) {
@@ -336,49 +381,15 @@ export default class ObsidianTypstMate extends Plugin {
 
     // Case 1: Non-empty selection
     if (!selection.empty) {
-      const selectedText = cm.state.sliceDoc(selection.from, selection.to);
-
-      // Check if selection contains math regions
-      const regions = collectRegions(cm, selection.from, selection.to).filter((r) => r.kind !== 'codeblock');
-
-      if (regions.length > 0) {
-        const changes: { from: number; to: number; insert: string }[] = [];
-        for (const region of regions) {
-          const content = cm.state.sliceDoc(region.from, region.to);
-          const source = content.trim();
-          if (!source || !isLikelyLatexMath(source)) continue;
-          try {
-            const typst = (await this.typst.latexeq_to_typm(source)).trim();
-            if (typst && typst !== source) {
-              changes.push({ from: region.from, to: region.to, insert: preserveOuterWhitespace(content, typst) });
-            }
-          } catch (err) {
-            console.error('[typst-mate] latex conversion error:', err);
-          }
-        }
-        if (changes.length > 0) {
-          changes.sort((a, b) => a.from - b.from);
-          cm.dispatch({ changes });
-          new Notice(t('notices.latexConvertedCount', { count: changes.length }));
-          return;
-        }
-      }
-
-      // Try markdown-level conversion in selection
-      try {
-        const { text: converted, count } = await convertLatexInMarkdown(selectedText, (latex) =>
-          this.typst.latexeq_to_typm(latex),
-        );
-        if (count > 0) {
-          targetEditor.replaceSelection(converted);
-          new Notice(t('notices.latexConvertedCount', { count }));
-          return;
-        }
-      } catch (err) {
-        console.error('[typst-mate] latex conversion error:', err);
+      const changes = await this.collectRangeConversionEdits(cm, selection.from, selection.to);
+      if (changes.length > 0) {
+        cm.dispatch({ changes });
+        new Notice(t('notices.latexConvertedCount', { count: changes.length }));
+        return;
       }
 
       // If selection is a standalone LaTeX formula without delimiters
+      const selectedText = cm.state.sliceDoc(selection.from, selection.to);
       if (isStandaloneLatexMath(selectedText)) {
         try {
           const converted = await this.typst.latexeq_to_typm(selectedText.trim());
@@ -422,35 +433,7 @@ export default class ObsidianTypstMate extends Plugin {
     }
 
     // Case 3: Convert all LaTeX formulas in the entire note
-    const allRegions = collectRegions(cm, 0, cm.state.doc.length).filter((r) => r.kind !== 'codeblock');
-
-    const regionChanges: { from: number; to: number; insert: string }[] = [];
-    for (const region of allRegions) {
-      const content = cm.state.sliceDoc(region.from, region.to);
-      const source = content.trim();
-      if (!source || !isLikelyLatexMath(source)) continue;
-      try {
-        const typst = (await this.typst.latexeq_to_typm(source)).trim();
-        if (typst && typst !== source) {
-          regionChanges.push({ from: region.from, to: region.to, insert: preserveOuterWhitespace(content, typst) });
-        }
-      } catch (err) {
-        console.error('[typst-mate] latex conversion error:', err);
-      }
-    }
-
-    // Formulas written with LaTeX delimiters (\[...\], \(...\), environments)
-    // are not parsed as math regions by Obsidian, so convert them in place as
-    // well instead of replacing the whole document (which resets the scroll).
-    const fullDoc = cm.state.doc.toString();
-    let fallbackChanges: { from: number; to: number; insert: string }[] = [];
-    try {
-      fallbackChanges = await convertLatexEdits(fullDoc, (latex) => this.typst.latexeq_to_typm(latex), regionChanges);
-    } catch (err) {
-      console.error('[typst-mate] latex conversion error:', err);
-    }
-
-    const changes = [...regionChanges, ...fallbackChanges].sort((a, b) => a.from - b.from);
+    const changes = await this.collectRangeConversionEdits(cm, 0, cm.state.doc.length);
     if (changes.length > 0) {
       cm.dispatch({ changes });
       new Notice(t('notices.latexConvertedCount', { count: changes.length }));
