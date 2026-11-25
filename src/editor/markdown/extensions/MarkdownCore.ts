@@ -29,20 +29,27 @@ const MATH_END = 'formatting_formatting-math_formatting-math-end_keyword_math_ma
 const CODEBLOCK_BEGIN = 'HyperMD-codeblock_HyperMD-codeblock-begin_HyperMD-codeblock-begin-bg_HyperMD-codeblock-bg';
 const CODEBLOCK_END = 'HyperMD-codeblock_HyperMD-codeblock-bg_HyperMD-codeblock-end_HyperMD-codeblock-end-bg';
 
-export const collectRegions = (view: EditorView, from?: number, to?: number): Region[] => {
+function scanRegions(
+  view: EditorView,
+  from: number | undefined,
+  to: number | undefined,
+  onRegion: (region: Region) => boolean | undefined,
+): void {
   const tree = syntaxTree(view.state);
 
-  const rawRegions: Region[] = [];
   let id = 0;
   let mathStart: number | null = null; // 区切り文字は含まない
   let isDisplayMath = false;
   let codeblockLangEnd: number | null = null; // 区切り文字は含まない
-  let codeblockLang: string;
+  let codeblockLang = '';
+  let stop = false;
 
   tree.iterate({
     from,
     to,
     enter: (node) => {
+      if (stop) return false;
+
       switch (node.name) {
         case INLINEMATH_BEGIN:
           mathStart = node.to;
@@ -58,13 +65,15 @@ export const collectRegions = (view: EditorView, from?: number, to?: number): Re
           const innerFrom = mathStart;
           const innerTo = node.from;
           const kind = !isDisplayMath ? 'inline' : 'display';
+          mathStart = null;
 
           if (innerFrom <= innerTo) {
-            rawRegions.push({ from: innerFrom, to: innerTo, kind, id });
+            if (onRegion({ from: innerFrom, to: innerTo, kind, id }) === false) {
+              stop = true;
+              return false;
+            }
             id++;
           }
-
-          mathStart = null;
           break;
         }
         case CODEBLOCK_BEGIN: {
@@ -77,19 +86,24 @@ export const collectRegions = (view: EditorView, from?: number, to?: number): Re
 
           const codeblockStart = codeblockLangEnd - codeblockLang.length;
           const codeblockEnd = node.from - 1;
+          const langEnd = codeblockLangEnd;
+          codeblockLangEnd = null;
 
-          if (codeblockLangEnd < codeblockEnd) {
-            rawRegions.push({
-              id,
-              from: codeblockStart,
-              to: codeblockEnd,
-              kind: 'codeblock',
-              lang: codeblockLang,
-            });
+          if (langEnd < codeblockEnd) {
+            if (
+              onRegion({
+                id,
+                from: codeblockStart,
+                to: codeblockEnd,
+                kind: 'codeblock',
+                lang: codeblockLang,
+              }) === false
+            ) {
+              stop = true;
+              return false;
+            }
             id++;
           }
-
-          codeblockLangEnd = null;
           break;
         }
       }
@@ -97,83 +111,39 @@ export const collectRegions = (view: EditorView, from?: number, to?: number): Re
       return true;
     },
   });
+}
+
+export const collectRegions = (view: EditorView, from?: number, to?: number): Region[] => {
+  const rawRegions: Region[] = [];
+  scanRegions(view, from, to, (region) => {
+    rawRegions.push(region);
+    return true;
+  });
   return rawRegions;
 };
 
 function findActiveRegion(view: EditorView, cursor: number): Region | null {
-  const tree = syntaxTree(view.state);
   const { from, to } = view.viewport;
-
-  let id = 0;
-  let mathStart: number | null = null;
-  let isDisplayMath = false;
-  let codeblockLangEnd: number | null = null;
-  let codeblockLang: string;
-
   let result: Region | null = null;
-  tree.iterate({
-    from,
-    to,
-    enter: (node) => {
-      if (result !== null) return false;
 
-      switch (node.name) {
-        case INLINEMATH_BEGIN:
-          mathStart = node.to;
-          isDisplayMath = false;
-          break;
-        case DISPLAYMATH_BEGIN:
-          mathStart = node.to;
-          isDisplayMath = true;
-          break;
-        case MATH_END: {
-          if (mathStart === null) break;
-
-          const innerFrom = mathStart;
-          const innerTo = node.from;
-          const kind = !isDisplayMath ? 'inline' : 'display';
-
-          if (innerFrom <= innerTo) {
-            if (innerFrom <= cursor && cursor <= innerTo) {
-              result = { from: innerFrom, to: innerTo, kind, id };
-              return false;
-            }
-            if (cursor < innerFrom) return false;
-            id++;
-          }
-
-          mathStart = null;
-          break;
-        }
-
-        case CODEBLOCK_BEGIN: {
-          codeblockLangEnd = node.to;
-          codeblockLang = view.state.sliceDoc(node.from + 3, codeblockLangEnd).trim();
-          break;
-        }
-        case CODEBLOCK_END: {
-          if (codeblockLangEnd === null) break;
-
-          const codeblockStart = codeblockLangEnd - codeblockLang.length;
-          const codeblockEnd = node.from - 1;
-
-          if (codeblockLangEnd < codeblockEnd) {
-            // ? the range of ... in  ```lang\n...\n```
-            if (codeblockLangEnd < cursor && cursor <= codeblockEnd) {
-              result = { id, from: codeblockStart, to: codeblockEnd, kind: 'codeblock', lang: codeblockLang };
-              return false;
-            }
-            if (cursor < codeblockLangEnd) return false;
-            id++;
-          }
-
-          codeblockLangEnd = null;
-          break;
-        }
+  scanRegions(view, from, to, (region) => {
+    if (region.kind === 'codeblock') {
+      const langEnd = region.from + (region.lang?.length ?? 0);
+      // ? the range of ... in  ```lang\n...\n```
+      if (langEnd < cursor && cursor <= region.to) {
+        result = region;
+        return false;
       }
-
+      if (cursor < langEnd) return false;
       return true;
-    },
+    }
+
+    if (region.from <= cursor && cursor <= region.to) {
+      result = region;
+      return false;
+    }
+    if (cursor < region.from) return false;
+    return true;
   });
 
   return result;
@@ -263,6 +233,35 @@ export class MarkdownCorePluginValue implements PluginValue {
     if (update.docChanged) {
       if (this.activeRegion) {
         const cursor = update.state.selection.main.head;
+        const innerFromA = this.activeRegion.from + this.activeRegion.skip;
+        const innerToA = this.activeRegion.to;
+        const delimPattern = this.activeRegion.kind === 'codeblock' ? /[`~]/ : /\$/;
+
+        let changesCount = 0;
+        let lastChange: { fromA: number; toA: number; fromB: number; toB: number; inserted: string } | null = null;
+        let touchedBoundaryOrDelim = false;
+
+        update.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
+          changesCount++;
+          const insertedText = inserted.toString();
+          lastChange = { fromA, toA, fromB, toB, inserted: insertedText };
+
+          if (fromA < innerFromA || toA > innerToA) {
+            touchedBoundaryOrDelim = true;
+            return;
+          }
+
+          const deletedText = update.startState.sliceDoc(fromA, toA);
+          if (delimPattern.test(insertedText) || delimPattern.test(deletedText)) {
+            touchedBoundaryOrDelim = true;
+          }
+        });
+
+        if (touchedBoundaryOrDelim) {
+          this.recompute(update.view);
+          return;
+        }
+
         const newFrom = update.changes.mapPos(this.activeRegion.from, -1);
         const rawTo = this.activeRegion.to + this.activeRegion.skipEnd;
         const newRawTo = update.changes.mapPos(Math.min(rawTo, update.changes.length), -1);
@@ -283,34 +282,22 @@ export class MarkdownCorePluginValue implements PluginValue {
           );
 
           if (newRegion) {
-            let reparsed = true;
-            if (this.activeRegion.tree) {
-              let changesCount = 0;
-              let lastChange: any = null;
-              update.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
-                changesCount++;
-                lastChange = { fromA, toA, fromB, toB, inserted: inserted.toString() };
-              });
-
-              if (changesCount === 1) {
-                const innerFromA = this.activeRegion.from + this.activeRegion.skip;
-                const innerToA = this.activeRegion.to;
-                if (innerFromA <= lastChange.fromA && lastChange.toA <= innerToA) {
-                  const localStart = lastChange.fromA - innerFromA;
-                  const localEnd = lastChange.toA - innerFromA;
-                  const innerNewText = update.view.state.sliceDoc(newRegion.from + newRegion.skip, newRegion.to);
-                  try {
-                    newRegion.tree = reparse(
-                      this.activeRegion.tree,
-                      innerNewText,
-                      { start: localStart, end: localEnd },
-                      lastChange.inserted.length,
-                    );
-                    reparsed = true;
-                  } catch (e) {
-                    console.error('TypstMate: Incremental reparse failed', e);
-                  }
-                }
+            let reparsed = false;
+            if (this.activeRegion.tree && changesCount === 1 && lastChange) {
+              const change = lastChange as { fromA: number; toA: number; inserted: string };
+              const localStart = change.fromA - innerFromA;
+              const localEnd = change.toA - innerFromA;
+              const innerNewText = update.view.state.sliceDoc(newRegion.from + newRegion.skip, newRegion.to);
+              try {
+                newRegion.tree = reparse(
+                  this.activeRegion.tree,
+                  innerNewText,
+                  { start: localStart, end: localEnd },
+                  change.inserted.length,
+                );
+                reparsed = true;
+              } catch (e) {
+                console.error('TypstMate: Incremental reparse failed', e);
               }
             }
 
@@ -338,25 +325,27 @@ export class MarkdownCorePluginValue implements PluginValue {
         }
         this.recompute(update.view);
       } else {
-        let hasDelimiter = false;
-        update.changes.iterChanges((_fA, _tA, fB, tB, inserted) => {
-          if (hasDelimiter) return;
-          const text = inserted.toString();
-          const textNext = update.view.state.sliceDoc(tB, tB + 1);
-          const currentLine = update.view.state.doc.lineAt(fB).text;
-          if (
-            text.includes('$') ||
-            text.includes('`') ||
-            text.includes('~') ||
-            text.includes('\\') ||
-            textNext.includes('$') ||
-            textNext.includes('`') ||
-            textNext.includes('~') ||
-            textNext.includes('\\') ||
-            (currentLine.startsWith('```') && text === '\n')
-          )
-            hasDelimiter = true;
-        });
+        const cursor = update.state.selection.main.head;
+        const cursorLineText = update.view.state.doc.lineAt(cursor).text;
+        let hasDelimiter = /[$`~\\]/.test(cursorLineText);
+
+        if (!hasDelimiter) {
+          update.changes.iterChanges((fromA, toA, fB, tB, inserted) => {
+            if (hasDelimiter) return;
+            const text = inserted.toString();
+            const deleted = update.startState.sliceDoc(fromA, toA);
+            const textNext = update.view.state.sliceDoc(tB, tB + 1);
+            const currentLine = update.view.state.doc.lineAt(fB).text;
+            if (
+              /[$`~\\]/.test(text) ||
+              /[$`~\\]/.test(deleted) ||
+              /[$`~\\]/.test(textNext) ||
+              (currentLine.startsWith('```') && text === '\n')
+            ) {
+              hasDelimiter = true;
+            }
+          });
+        }
         if (hasDelimiter) this.recompute(update.view);
       }
     } else if (update.selectionSet) {

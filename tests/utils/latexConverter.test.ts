@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
   convertLatexInMarkdown,
+  hasConvertibleLatex,
   hasPossibleLatex,
   isLikelyLatex,
   isLikelyLatexMath,
@@ -230,6 +231,48 @@ describe('latexConverter', () => {
       expect(isLikelyLatexMath('dot.double(x)')).toBe(false);
       expect(isLikelyLatexMath('mark(x, color: red)')).toBe(false);
       expect(isLikelyLatexMath('annot(pos: top)[label]')).toBe(false);
+    });
+  });
+
+  describe('hasConvertibleLatex', () => {
+    it('returns true only when markdown contains convertible math', () => {
+      expect(hasConvertibleLatex('Plain text')).toBe(false);
+      expect(hasConvertibleLatex('Price is $10 and $20')).toBe(false);
+      expect(hasConvertibleLatex('Already Typst: $alpha + beta$')).toBe(false);
+      expect(hasConvertibleLatex('Formula: $\\frac{a}{b}$')).toBe(true);
+      expect(hasConvertibleLatex('Display: $$\\sum_{i=1}^n x_i$$')).toBe(true);
+      expect(hasConvertibleLatex('Inline paren: \\(x + y\\)')).toBe(true);
+    });
+  });
+
+  describe('paste test note regression', () => {
+    it('converts all 5 LaTeX formulas in 粘贴测试.md while keeping valid Typst inline math', async () => {
+      const input = [
+        '1\u00a0\u200b\u00a000000000\u00a0\u200b\u00a010000000000000000000000',
+        '- 符号位 $S=1$，表示负数',
+        '- 阶码 $E=0$',
+        '- 尾数 $M\\ne 0$',
+        '',
+        '因此这是 **非规格化数**。',
+        '非规格化数的值为：',
+        '$$(-1)^S\\times 0.M\\times 2^{-126}$$',
+        '尾数部分：',
+        '$$0.10000000000000000000000_2=0.5=\\frac{1}{2}$$',
+        '所以数值为：',
+        '$$-\\frac{1}{2}\\times 2^{-126}=-2^{-127}$$',
+        '即：',
+        '$$-2^{-127}$$',
+      ].join('\n');
+
+      const result = await convertLatexInMarkdown(input, async (latex) => `converted(${latex})`);
+      expect(result.count).toBe(5);
+      expect(result.text).toContain('- 符号位 $S=1$，表示负数');
+      expect(result.text).toContain('- 阶码 $E=0$');
+      expect(result.text).toContain('- 尾数 $converted(M\\ne 0)$');
+      expect(result.text).toContain('$$converted((-1)^S\\times 0.M\\times 2^{-126})$$');
+      expect(result.text).toContain('$$converted(0.10000000000000000000000_2=0.5=\\frac{1}{2})$$');
+      expect(result.text).toContain('$$converted(-\\frac{1}{2}\\times 2^{-126}=-2^{-127})$$');
+      expect(result.text).toContain('$$converted(-2^{-127})$$');
     });
   });
 });

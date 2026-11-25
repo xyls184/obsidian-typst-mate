@@ -8,7 +8,7 @@ import {
   debounce,
   type EventRef,
   loadMathJax,
-  MarkdownView,
+  type MarkdownView,
   MenuItem,
   Notice,
   Platform,
@@ -21,11 +21,10 @@ import {
 } from 'obsidian';
 
 import { EditorHelper } from '@/editor';
+import { convertActiveLatexToTypst, handleLatexPaste } from '@/editor/latexConversion';
 import { initI18n, t } from '@/i18n';
 import { BASE_COLOR_VAR, TYPST_SVG_FILL, TYPST_SVG_STROKE } from './constants';
 import { DEFAULT_SETTINGS, type Settings } from './data/settings';
-import { collectRegions } from './editor/markdown/extensions/MarkdownCore';
-import { getActiveRegion, getRegionAt } from './editor/shared/utils/core';
 import TypstManager from './libs/typst';
 import type $ from './libs/worker';
 import Typst from './libs/worker';
@@ -40,16 +39,6 @@ import { TypstTextView } from './ui/views/typst-text/typstText';
 import { TypstToolsView } from './ui/views/typst-tools/typstTools';
 import { exportToPdf } from './utils/export';
 import { createNewFile } from './utils/file';
-import {
-  convertLatexEdits,
-  convertLatexInMarkdown,
-  hasPossibleLatex,
-  isLikelyLatexMath,
-  isStandaloneLatex,
-  isStandaloneLatexMath,
-  preserveOuterWhitespace,
-  stripMathDelimiters,
-} from './utils/latexConverter';
 import { zip } from './utils/packageCompressor';
 
 import './main.css';
@@ -315,132 +304,8 @@ export default class ObsidianTypstMate extends Plugin {
     }
   }
 
-  private async collectRangeConversionEdits(
-    cm: any,
-    from: number,
-    to: number,
-  ): Promise<{ from: number; to: number; insert: string }[]> {
-    const regions = collectRegions(cm, from, to).filter((r) => r.kind !== 'codeblock' && r.from >= from && r.to <= to);
-
-    const regionChanges: { from: number; to: number; insert: string }[] = [];
-    for (const region of regions) {
-      const content = cm.state.sliceDoc(region.from, region.to);
-      const source = content.trim();
-      if (!source || !isLikelyLatexMath(source)) continue;
-      try {
-        const typst = (await this.typst.latexeq_to_typm(source)).trim();
-        if (typst && typst !== source) {
-          regionChanges.push({ from: region.from, to: region.to, insert: preserveOuterWhitespace(content, typst) });
-        }
-      } catch (err) {
-        console.error('[typst-mate] latex conversion error:', err);
-      }
-    }
-
-    // Formulas written with LaTeX delimiters (\[...\], \(...\), environments)
-    // or in structures skipped by `collectRegions` are converted in place so
-    // the cursor and scroll position stay intact.
-    const rangeText = cm.state.sliceDoc(from, to);
-    const excludeInRange = regionChanges.map((change) => ({
-      from: change.from - from,
-      to: change.to - from,
-    }));
-    let fallbackChanges: { from: number; to: number; insert: string }[] = [];
-    try {
-      const edits = await convertLatexEdits(rangeText, (latex) => this.typst.latexeq_to_typm(latex), excludeInRange);
-      fallbackChanges = edits.map((edit) => ({
-        from: edit.from + from,
-        to: edit.to + from,
-        insert: edit.insert,
-      }));
-    } catch (err) {
-      console.error('[typst-mate] latex conversion error:', err);
-    }
-
-    return [...regionChanges, ...fallbackChanges].sort((a, b) => a.from - b.from);
-  }
-
   async convertActiveLatexToTypst(editor?: any): Promise<void> {
-    let targetEditor = editor;
-    if (!targetEditor) {
-      const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-      if (!activeView) {
-        new Notice(t('notices.noActiveView'));
-        return;
-      }
-      targetEditor = activeView.editor;
-    }
-
-    const cm = targetEditor.cm;
-    if (!cm) {
-      new Notice(t('notices.noActiveView'));
-      return;
-    }
-
-    const selection = cm.state.selection.main;
-
-    // Case 1: Non-empty selection
-    if (!selection.empty) {
-      const changes = await this.collectRangeConversionEdits(cm, selection.from, selection.to);
-      if (changes.length > 0) {
-        cm.dispatch({ changes });
-        new Notice(t('notices.latexConvertedCount', { count: changes.length }));
-        return;
-      }
-
-      // If selection is a standalone LaTeX formula without delimiters
-      const selectedText = cm.state.sliceDoc(selection.from, selection.to);
-      if (isStandaloneLatexMath(selectedText)) {
-        try {
-          const converted = await this.typst.latexeq_to_typm(selectedText.trim());
-          if (converted) {
-            targetEditor.replaceSelection(converted);
-            new Notice(t('notices.latexConverted'));
-            return;
-          }
-        } catch (err) {
-          console.error('[typst-mate] latex conversion error:', err);
-        }
-      }
-
-      new Notice(t('notices.noLatexFound'));
-      return;
-    }
-
-    // Case 2: Cursor inside a math block
-    const activeRegion = getActiveRegion(cm) || getRegionAt(cm, selection.head);
-    if (activeRegion && (activeRegion.kind === 'inline' || activeRegion.kind === 'display')) {
-      const content = cm.state.sliceDoc(activeRegion.from + activeRegion.skip, activeRegion.to);
-      const source = content.trim();
-      if (source.length > 0 && isLikelyLatexMath(source)) {
-        try {
-          const converted = (await this.typst.latexeq_to_typm(source)).trim();
-          if (converted && converted !== source) {
-            cm.dispatch({
-              changes: {
-                from: activeRegion.from + activeRegion.skip,
-                to: activeRegion.to,
-                insert: preserveOuterWhitespace(content, converted),
-              },
-            });
-            new Notice(t('notices.latexConverted'));
-            return;
-          }
-        } catch (err) {
-          console.error('[typst-mate] latex conversion error:', err);
-        }
-      }
-    }
-
-    // Case 3: Convert all LaTeX formulas in the entire note
-    const changes = await this.collectRangeConversionEdits(cm, 0, cm.state.doc.length);
-    if (changes.length > 0) {
-      cm.dispatch({ changes });
-      new Notice(t('notices.latexConvertedCount', { count: changes.length }));
-      return;
-    }
-
-    new Notice(t('notices.noLatexFound'));
+    await convertActiveLatexToTypst(this, editor);
   }
 
   private addCommands() {
@@ -544,7 +409,7 @@ export default class ObsidianTypstMate extends Plugin {
         if (file instanceof TFile && file.extension === 'md') this.typstManager.scheduleFileRefresh(file);
       }),
       // ? css-change が意図しない値を渡すので arrow function で包む
-      this.app.workspace.on('css-change', () => this.applyBaseColor.bind(this)),
+      this.app.workspace.on('css-change', () => this.applyBaseColor()),
       this.app.workspace.on('leaf-menu', (menu, leaf) => {
         if (leaf.view.getViewType() === 'markdown') {
           const pdfItems = menu.items
@@ -637,71 +502,8 @@ export default class ObsidianTypstMate extends Plugin {
         const cache = this.app.metadataCache.getCache(path);
         if (cache) this.typstManager.syncFileCache(cache);
       }),
-      this.app.workspace.on('editor-paste', async (evt, editor) => {
-        if (!this.settings.autoConvertLatexOnPaste) return;
-        if (evt.clipboardData?.files?.length) return;
-
-        const text = evt.clipboardData?.getData('text/plain');
-        if (!text || text.length === 0) return;
-        if (!hasPossibleLatex(text)) return;
-
-        const cm = editor.cm;
-        if (!cm) return;
-
-        // Check if cursor is inside a math block
-        const activeRegion = getActiveRegion(cm) || getRegionAt(cm, cm.state.selection.main.head);
-        const insideMath = activeRegion && (activeRegion.kind === 'inline' || activeRegion.kind === 'display');
-
-        if (insideMath) {
-          const stripped = stripMathDelimiters(text);
-          if (isLikelyLatexMath(stripped)) {
-            evt.preventDefault();
-            try {
-              const converted = await this.typst.latexeq_to_typm(stripped);
-              editor.replaceSelection(converted || stripped);
-            } catch (err) {
-              console.error('[typst-mate] paste conversion error:', err);
-              editor.replaceSelection(text);
-            }
-            return;
-          }
-          return;
-        }
-
-        // Check markdown text with embedded LaTeX formulas
-        try {
-          const { text: converted, count } = await convertLatexInMarkdown(text, (latex) =>
-            this.typst.latexeq_to_typm(latex),
-          );
-          if (count > 0) {
-            evt.preventDefault();
-            editor.replaceSelection(converted);
-            return;
-          }
-        } catch (err) {
-          console.error('[typst-mate] paste conversion error:', err);
-        }
-
-        // Check standalone raw formula (without $ delimiters)
-        if (isStandaloneLatex(text)) {
-          evt.preventDefault();
-          try {
-            const stripped = stripMathDelimiters(text);
-            const converted = await this.typst.latexeq_to_typm(stripped);
-            const isDisplay = text.includes('\n') || /\\begin\{/.test(text) || /^\\\[/.test(text.trim());
-            const isMultiline = text.includes('\n') || /\\begin\{/.test(text);
-            const result = isDisplay
-              ? isMultiline
-                ? `$$\n${converted.trim()}\n$$`
-                : `$$ ${converted} $$`
-              : `$ ${converted} $`;
-            editor.replaceSelection(result);
-          } catch (err) {
-            console.error('[typst-mate] paste conversion error:', err);
-            editor.replaceSelection(text);
-          }
-          return;
-        }
+      this.app.workspace.on('editor-paste', (evt, editor) => {
+        void handleLatexPaste(this, evt, editor);
       }),
       this.app.workspace.on('resize', refresh),
     );

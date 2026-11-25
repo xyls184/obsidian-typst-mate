@@ -105,12 +105,9 @@ export default abstract class TypstElement extends HTMLElement {
         }),
       );
     } else {
-      if (view instanceof MarkdownView) {
-        const region = getActiveRegion(view.editor.cm);
-        if (region) {
-          this.innerHTML = this.innerHTML.replaceAll('--typst-base-color', '--text-faint');
-          return;
-        }
+      if (this.isActiveRegion() && this.querySelector('svg') !== null) {
+        this.innerHTML = this.innerHTML.replaceAll('--typst-base-color', '--text-faint');
+        return;
       }
       const diagEl = document.createElement('span');
       diagEl.className = 'typstmate-error';

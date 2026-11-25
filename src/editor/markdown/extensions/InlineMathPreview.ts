@@ -29,14 +29,14 @@ class InlinePreviewPlugin implements PluginValue {
       return;
     }
 
-    if (update.docChanged || update.selectionSet) {
+    if (update.docChanged || update.selectionSet || update.focusChanged) {
       const region = getActiveRegion(update.view);
       if (!region || region.kind !== 'inline') {
         this.hide();
         return;
       }
 
-      const content = update.state.sliceDoc(region.from, region.to);
+      const content = update.state.sliceDoc(region.from + region.skip, region.to);
       if (content.startsWith('\\ref') || content.startsWith('{} \\ref')) {
         this.hide();
         return;

@@ -53,3 +53,36 @@ export function getRegionAt(view: EditorView, cursor: number): ParsedRegion | nu
 
   return region ? parseRegion(view, helper, region) : null;
 }
+
+/**
+ * Returns the parsed region only when `cursor` is strictly inside the region's
+ * delimiters (`$...$`, `$$...$$`, or inside a codeblock body). Unlike
+ * `getRegionAt`, cursors sitting on the outside of closing/opening delimiters
+ * (such as at the end of a pasted document right after `$$`) return `null`.
+ */
+export function getInnerRegionAt(view: EditorView, cursor: number): ParsedRegion | null {
+  const typstTextPlugin = view.plugin(typstTextCore);
+  if (typstTextPlugin) return typstTextPlugin.activeRegion;
+
+  const active = getActiveRegion(view);
+  if (active) {
+    if (active.kind === 'codeblock') {
+      if (active.from + active.skip <= cursor && cursor <= active.to) return active;
+    } else if (active.from <= cursor && cursor <= active.to + active.skipEnd) {
+      return active;
+    }
+  }
+
+  const helper = view.state.facet(helperFacet);
+  const { from, to } = view.viewport;
+  const regions = collectRegions(view, from, to);
+
+  const region = regions.find((r) => {
+    if (r.kind === 'codeblock') {
+      return r.from + (r.lang?.length ?? 0) < cursor && cursor <= r.to;
+    }
+    return r.from <= cursor && cursor <= r.to;
+  });
+
+  return region ? parseRegion(view, helper, region) : null;
+}

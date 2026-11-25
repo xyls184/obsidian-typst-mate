@@ -262,6 +262,26 @@ export interface LatexConversionEdit {
   insert: string;
 }
 
+function getConvertibleTokens(text: string): LatexToken[] {
+  return scanLatexTokens(text).filter((token) => {
+    if (token.type === 'protected') return false;
+    if (token.type === 'bracket_disp' || token.type === 'env_disp' || token.type === 'paren_inline') {
+      return (token.inner ?? '').trim().length > 0;
+    }
+    if (!token.inner) return false;
+    return isLikelyLatexMath(token.inner);
+  });
+}
+
+/**
+ * Synchronous check for whether markdown text contains at least one
+ * convertible LaTeX formula (used by paste handlers before async conversion).
+ */
+export function hasConvertibleLatex(text: string): boolean {
+  if (!hasPossibleLatex(text)) return false;
+  return getConvertibleTokens(text).length > 0;
+}
+
 /**
  * Finds every convertible LaTeX formula in `text` and returns the edits that
  * replace it with Typst math. Ranges in `exclude` (already converted math
@@ -272,17 +292,9 @@ export async function convertLatexEdits(
   convertEq: (latex: string) => Promise<string>,
   exclude: readonly { from: number; to: number }[] = [],
 ): Promise<LatexConversionEdit[]> {
-  if (!text || (!text.includes('$') && !text.includes('\\'))) return [];
+  if (!hasPossibleLatex(text)) return [];
 
-  const convertible = scanLatexTokens(text).filter((token) => {
-    if (token.type === 'protected') return false;
-    if (token.type === 'bracket_disp' || token.type === 'env_disp' || token.type === 'paren_inline') {
-      return (token.inner ?? '').trim().length > 0;
-    }
-    if (!token.inner) return false;
-    return isLikelyLatexMath(token.inner);
-  });
-
+  const convertible = getConvertibleTokens(text);
   if (convertible.length === 0) return [];
 
   const conversions = await Promise.all(

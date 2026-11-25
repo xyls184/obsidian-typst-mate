@@ -2,6 +2,7 @@ import { type CachedMetadata, getAllTags, MarkdownView, Notice, type TFile } fro
 
 import { DEFAULT_FONT_SIZE, RELAXED_INLINE_MATH } from '@/constants';
 import { DEFAULT_SETTINGS, type Settings } from '@/data/settings';
+import { getActiveRegion } from '@/editor/shared/utils/core';
 import { t } from '@/i18n';
 import type ObsidianTypstMate from '@/main';
 import TypstSVGElement from '@/ui/elements/SVG';
@@ -26,6 +27,7 @@ export default class TypstManager {
 
   beforeKind?: ProcessorKind;
   beforeProcessor?: Processor;
+  beforeSource?: string;
   beforeElement: HTMLElement = document.createElement('span');
   lastStateHash?: string;
 
@@ -469,6 +471,7 @@ export default class TypstManager {
 
     processor = getEffectiveProcessor(this.plugin.settings, kind as ProcessorKind, processor);
 
+    const prevProcessorId = this.beforeProcessor?.id;
     this.beforeProcessor = processor;
     if (processor.renderingEngine === 'mathjax') {
       if (this.plugin.settings.applyProcessorToMathJax) code = processor.format.replace('{CODE}', code);
@@ -487,15 +490,31 @@ export default class TypstManager {
     typstSVGEl.ndir = ndir;
     typstSVGEl.npath = npath;
     containerEl.appendChild(typstSVGEl);
-    // ちらつき防止
-    const { id: beforeId } = this.beforeProcessor;
-    if (this.beforeKind === kind && beforeId === processor.id)
+    // ちらつき防止: 編集中のアクティブ領域または同一ソースのみ前回 SVG を引き継ぐ
+    if (
+      this.beforeKind === kind &&
+      prevProcessorId === processor.id &&
+      this.isReuseablePlaceholder(containerEl, kind, code)
+    ) {
       typstSVGEl.replaceChildren(this.beforeElement.cloneNode(true));
+    }
+
+    this.beforeKind = kind as ProcessorKind;
+    this.beforeSource = code;
+    this.beforeElement = typstSVGEl;
 
     typstSVGEl.render();
 
-    this.beforeElement = typstSVGEl;
     return containerEl as HTMLElement;
+  }
+
+  private isReuseablePlaceholder(containerEl: Element, kind: string, code: string): boolean {
+    if (this.beforeSource === code || containerEl.classList.contains('typstmate-codeblockpreview')) return true;
+    const view = this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+    const cm = view?.editor?.cm;
+    if (!cm) return false;
+    const region = getActiveRegion(cm);
+    return !!region && region.kind === kind && cm.state.sliceDoc(region.from + region.skip, region.to) === code;
   }
 
   /**
