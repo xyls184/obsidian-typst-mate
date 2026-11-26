@@ -89,6 +89,19 @@ describe('normalizeTypstMath', () => {
     expect(normalizeTypstMath('#text[a"]"b]')).toBe('"a\\"]\\"b"');
     expect(normalizeTypstMath('upright("a)b")')).toBe('"a)b"');
   });
+
+  it('escapes unescaped % in math while preserving strings, comments, existing \\%, and #call(...) ratios', () => {
+    expect(normalizeTypstMath('1 0 0 %')).toBe('100 \\%');
+    expect(normalizeTypstMath('5 0 % + 2 5 %')).toBe('50 \\% + 25 \\%');
+    expect(normalizeTypstMath('5 0 %%')).toBe('50 \\%\\%');
+    expect(normalizeTypstMath('frac(5 0 %, 1 0 0 %)')).toBe('frac(50 \\%, 100 \\%)');
+    expect(normalizeTypstMath('100 \\%')).toBe('100 \\%');
+    expect(normalizeTypstMath('"50%" + /* 50% */ 10 // 50%')).toBe('"50%" + /* 50% */ 10 // 50%');
+    expect(normalizeTypstMath('#box(fill: yellow, baseline: 20%)[5 0 %]')).toBe(
+      '#box(fill: yellow, baseline: 20%)[50 \\%]',
+    );
+    expect(normalizeTypstMath('#box(stroke: 0.5pt, inset: 2pt, baseline: 20%)[$ 5 0 % $]')).toBe('boxed(50 \\%)');
+  });
 });
 
 describe('preprocessLatexMath', () => {

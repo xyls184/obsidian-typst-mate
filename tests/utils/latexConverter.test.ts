@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
-import init, { Typst } from '../../pkg/typst_wasm.js';
 import {
   convertLatexInMarkdown,
   hasConvertibleLatex,
@@ -317,6 +316,10 @@ describe('latexConverter', () => {
 
     it('produces idempotent Typst without outer $ delimiters across real tylax WASM conversions', async () => {
       const wasmPath = path.resolve(__dirname, '../../typst.wasm');
+      const gluePath = path.resolve(__dirname, '../../pkg/typst_wasm.js');
+      if (!fs.existsSync(wasmPath) || !fs.existsSync(gluePath)) return;
+
+      const { default: init, Typst } = await import('../../pkg/typst_wasm.js');
       const wasm = fs.readFileSync(wasmPath);
       await init({ module_or_path: wasm });
       const typst = new Typst(
@@ -346,6 +349,9 @@ describe('latexConverter', () => {
         String.raw`\{ 1, 2, 3 \}`,
         String.raw`a \, b \; c \! d \ e`,
         String.raw`a = 1 \\ b = 2`,
+        String.raw`\frac{50\%}{100\%}`,
+        String.raw`\boxed{50\%}`,
+        String.raw`\begin{aligned} a &= 50\% \\ b &= 25\% \end{aligned}`,
       ];
 
       for (const latex of samples) {
@@ -354,6 +360,19 @@ describe('latexConverter', () => {
         // Ensure no unescaped `$` outside quotes remains in the normalized formula.
         const withoutQuotedStrings = converted.replace(/"(?:\\.|[^"\\])*"/g, '');
         expect(withoutQuotedStrings).not.toMatch(/(?<!\\)\$/);
+      }
+
+      const percentSamples = [
+        String.raw`\frac{50\%}{100\%}`,
+        String.raw`\boxed{50\%}`,
+        String.raw`\begin{aligned} a &= 50\% \\ b &= 25\% \end{aligned}`,
+      ];
+      for (const latex of percentSamples) {
+        const converted = convert(latex);
+        const withoutQuotedStrings = converted.replace(/"(?:\\.|[^"\\])*"/g, '');
+        expect(withoutQuotedStrings).not.toMatch(/(?<!\\)%/);
+        const svgResult = typst.svg(`$ ${converted} $`, '/', 'inline', 'test');
+        expect(svgResult.diags ?? []).toEqual([]);
       }
     });
   });

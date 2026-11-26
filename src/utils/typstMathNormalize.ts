@@ -382,6 +382,94 @@ function replaceUpright(input: string): string {
 }
 
 /**
+ * Escapes `%` as `\%` in Typst math so Markdown parsers (e.g. Obsidian) do not
+ * interpret `%` or `%%` as comments, while leaving quoted strings, Typst
+ * comments, and `#call(...)` code arguments (such as `20%`) untouched.
+ */
+function escapeMathPercent(input: string): string {
+  if (!input.includes('%')) return input;
+
+  let out = '';
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i]!;
+
+    if (ch === '\\') {
+      if (i + 1 < input.length) {
+        out += ch + input[i + 1]!;
+        i++;
+      } else {
+        out += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      const qEnd = findClosingQuote(input, i);
+      if (qEnd !== -1) {
+        out += input.slice(i, qEnd + 1);
+        i = qEnd;
+        continue;
+      }
+    }
+
+    if (ch === '/' && input[i + 1] === '*') {
+      let depth = 1;
+      let j = i + 2;
+      while (j < input.length && depth > 0) {
+        if (input[j] === '/' && input[j + 1] === '*') {
+          depth++;
+          j += 2;
+        } else if (input[j] === '*' && input[j + 1] === '/') {
+          depth--;
+          j += 2;
+        } else {
+          j++;
+        }
+      }
+      if (depth === 0) {
+        out += input.slice(i, j);
+        i = j - 1;
+        continue;
+      }
+    }
+
+    if (ch === '/' && input[i + 1] === '/') {
+      const nl = input.indexOf('\n', i + 2);
+      const end = nl === -1 ? input.length : nl;
+      out += input.slice(i, end);
+      i = end - 1;
+      continue;
+    }
+
+    if (ch === '#') {
+      const tail = input.slice(i + 1);
+      const identMatch = tail.match(/^[A-Za-z_][A-Za-z0-9_.-]*/);
+      if (identMatch) {
+        let cursor = i + 1 + identMatch[0].length;
+        while (input[cursor] === ' ') cursor++;
+        if (input[cursor] === '(') {
+          const closeParen = findClosing(input, cursor, '(', ')');
+          if (closeParen !== -1) {
+            out += input.slice(i, closeParen + 1);
+            i = closeParen;
+            continue;
+          }
+        }
+      }
+    }
+
+    if (ch === '%') {
+      out += '\\%';
+      continue;
+    }
+
+    out += ch;
+  }
+
+  return out;
+}
+
+/**
  * Rewrites Typst math output so boxed formulas use `boxed(...)`, upright text
  * is quoted, and split numbers are rejoined while italic words stay spaced.
  */
@@ -392,6 +480,7 @@ export function normalizeTypstMath(input: string): string {
   out = replaceTextMarkup(out);
   out = replaceUpright(out);
   out = joinSplitNumbers(out);
+  out = escapeMathPercent(out);
   // `bold(#text[abc])` is handled because the text markup is already quoted.
   return out;
 }
