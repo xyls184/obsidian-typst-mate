@@ -2,103 +2,43 @@
 
 > **注意**
 >
-> 本项目包含使用 DeepSeek-Flash 进行 AI 辅助编码（vibe coding）的改动。AI 生成内容可能不准确，请自行审查后再使用。
+> 本项目包含使用 AI 辅助编码（vibe coding）的改动。AI 生成内容可能不准确，请自行审查后再使用。
 >
-> **给 agent / 新克隆的构建提示**：请用 `git clone --recurse-submodules`（`typst` 子模块参与 wasm 编译）。仓库不提交 `pkg/` 与 `typst.wasm`，所以首次构建必须**先重建 wasm**（Rust + `wasm32-unknown-unknown` + 与 `wasm/Cargo.lock` 版本一致的 `wasm-bindgen` CLI），再 `bun install && bun run build`；之后只改 TypeScript 时可跳过 wasm 重建。完整命令、工具链版本与部署步骤见 [docs/fork-changes.md](docs/fork-changes.md) 的「Typst 0.15.1」一节。
+> **新克隆构建提示**：请使用 `git clone --recurse-submodules`。仓库不提交 `pkg/` 与 `typst.wasm`，首次构建须先重建 WASM，再执行 `bun install && bun run build`；仅修改 TypeScript 时可直接 `bun run build`。完整工具链与构建步骤见 [docs/fork-changes.md](docs/fork-changes.md)。
 
-这是 [azyarashi/obsidian-typst-mate](https://github.com/azyarashi/obsidian-typst-mate) 的个人 fork，仅包含以下改动。
+这是 [azyarashi/obsidian-typst-mate](https://github.com/azyarashi/obsidian-typst-mate) 的个人维护 fork（基于上游行为与发布节奏差异独立维护，暂不向上游提交 PR），主要改动如下：
 
-## 1. 内置 Typst 升级到 0.15.1
+## 主要改动
 
-- `wasm/Cargo.toml` 与 `typst` 子模块从 0.14.2 升级到 0.15.1。
-- 迁移 wasm 绑定到 0.15 API：`PagedDocument`、`RootedPath`、`DiagSpan`、`RenderOptions`、`PagedPosition` 等。
-- Windows 的 vault 路径会规范化为正斜杠，再传给 Typst 的虚拟文件系统。
-- 重新生成 wasm JS glue，并加入 `scripts/patch-wasm-glue.ts`：避免 Vite 的 inline worker 把约 46 MB 的 wasm 以 base64 塞进 `main.js`。当前构建产物约为 643 KB 的 `main.js` + 独立的 `typst-2.4.0.wasm`。
+1. **内置 Typst 升级至 0.15.1**
+   - 升级 `wasm/Cargo.toml` 与 `typst` 子模块并迁移至 0.15 API，Windows 下路径自动规范化为正斜杠。
+   - 通过 `scripts/patch-wasm-glue.ts` 分离 `main.js` 与独立的 `typst-<version>.wasm`，避免 worker 内联膨胀。
 
-## 2. 公式内中文的 CJK fallback
+2. **公式内中文 CJK Fallback**
+   - 优先使用插件 `fonts/` 目录中的 CJK 字体，桌面端自动回退系统常见 CJK 字体，并通过 `#show math.text` 注入回退字体族（不影响 `cases` 等数学定界符伸缩）；移动端需自行将字体放入插件 `fonts/` 目录。
 
-Typst 内置字体不包含 CJK 字形，`$"中文" + 1 = 8$` 这类公式会显示成方框。当前实现：
+3. **行内公式增强**
+   - 支持闭合 `$` 前带空格的单行 `$ ... $` 宽松解析（同时覆盖 Live Preview 与 Reading View）。
+   - 修复 Typst 0.15 行内基线对齐，并新增 **Full-height inline math** 设置（以 `#box($ {CODE} $)` 保持行内公式的 display 尺寸）。
 
-- 优先使用插件 `fonts/` 目录中已加载的 CJK 字体。
-- 如果没有，则在桌面端从系统字体目录加载一个 CJK 字体（Windows: `NotoSerifSC-VF.ttf`、`msyh.ttc`、`simsun.ttc` 等；macOS: `PingFang.ttc` 等；Linux: 常见 Noto CJK / 文泉驿路径）。
-- 通过新增的 wasm 导出 `find_cjk_family` 检测字体族，并注入：
+4. **渲染缓存与刷新控制**
+   - `TypstManager` 内置 512 条内存 LRU SVG 缓存与并发编译去重，world 状态变化时自动失效。
+   - 支持 **Live Reload**（仅刷新阅读视图）、**Refresh all formulas**（手动全量重编译）以及可选的启动后台预渲染。
 
-```typst
-#show math.text: set text(font: ("New Computer Modern", "<family>"))
-```
+5. **简体中文界面（i18n）**
+   - 提供完整的 `resources/locales/zh.json` 简体中文语言包，自动匹配 Obsidian / 系统语言。
 
-这里必须用 `math.text` 而不是 `math.equation`。对整条公式设置文本字体会让 `cases` 的可拉伸 `{` 回退到普通文本字体的非拉伸字形，导致 brace 只有一行高；`math.text` 只影响公式中的文字，不影响数学符号和定界符。
+6. **LaTeX 公式转 Typst**
+   - **自动粘贴转换 & 一键转换**：支持粘贴时自动转换（可开关），以及侧栏按钮/命令针对选区、当前公式或全笔记进行原地局部替换（保持光标与滚动条位置，支持 `\[...\]`、`\(...\)`、环境块与表格）。
+   - **输出规范化与幂等保护**：内置 `tylax` 升级至 0.3.7，自动将直立文本转为引号字符串、`\boxed` 转为 `boxed(...)`、合并拆散的多位数/小数、剥离环境外层 `$` / `#math.equation(...)[$ ... $]` 包装；识别时准确跳过 Typst 字符串、注释、`\ ` 换行与转义标点，避免已转换或手动编辑的 Typst 公式被重复拆分。
 
-移动端没有系统字体访问权限，需要把 CJK 字体放进 `.obsidian/plugins/typst-mate/fonts/`。
-
-## 3. 行内 `$ ... $` 宽松解析
-
-Obsidian 只把闭合 `$` 前没有空格的单行 `$...$` 识别为行内公式，因此 `$f(x) := cases(...) $` 会保持原始文本。当前实现：
-
-- 在 Live Preview 中匹配“闭合 `$` 前有空格”的单行 span，用 Typst SVG 替换；点击可恢复源码编辑。
-- 在 Reading View 中通过 Markdown postprocessor 处理同样的 span。
-- `\$` 按转义美元符号处理；没有其他启发式规则。
-- 只支持单行。跨行的 `$...$` 仍然不会被识别，请改用 `$$...$$` 显示公式。
-
-## 4. 行内基线修复与全高公式
-
-- 修复 Typst 0.15 下根 `<svg>` 不再带 `class` 导致 baseline/descent 没有注入的问题。
-- `middle` 样式现在使用 Typst 计算出的基线，不再用 CSS `vertical-align: middle` 覆盖。
-- 新增 Renderer 设置 **Full-height inline math**：用 `#box($ {CODE} $)` 让行内分式、`cases`、求和等保持 display 尺寸，同时仍留在文字行内。
-
-## 5. 渲染缓存
-
-Typst 每次编译公式都会重新排版。滚动时 CodeMirror 会销毁并重建视口外的公式 widget，导致同一公式被反复编译，这是滚动卡顿的主要来源。现在 `TypstManager` 会缓存已经生成的 SVG：
-
-- 缓存键为 `kind + ndir + 完整格式化源码`（包含 preamble、CJK 设置和 frontmatter imports）。
-- 相同公式的并发请求会合并为一个编译任务。
-- 缓存最多保留 512 条，按使用顺序淘汰。
-- 字体、包、tag 文件、offset 等 Typst world 状态变化时清空缓存；preamble 或 processor 变化会改变缓存键。
-
-### 为什么不在磁盘上长期保存 SVG
-
-SVG 依赖 Typst 版本、内置/系统字体、CJK fallback、preamble、frontmatter imports、tag 文件、offset 和 processor 设置。任何一项变化都会让旧 SVG 静默过期，而完整依赖哈希很容易漏项。单个公式的 SVG 约 8–15 KB，大量公式会占用数百 MB；从磁盘读取和解析这些文件也未必比在 worker 中重新编译（约 4–6 ms/条）更快。因此当前策略是：**每个会话按需编译 + 内存 LRU 缓存**，而不是持久化到磁盘。
-
-## 6. 实时重载、手动刷新与启动预热
-
-- **Live Reload**（默认开启）：笔记文件保存后，只刷新该笔记的**阅读视图/分屏预览**。Live Preview 本身只会重建被编辑的那个公式；缓存键变化后也只重新编译这一条，其他公式直接命中缓存。
-- **Refresh All Formulas**：Renderer 设置中的按钮，或命令面板中的 `Refresh all formulas`。清空 SVG 缓存并重建所有打开的 Markdown 视图。修改 preamble、processor、offset 等全局设置后手动执行；不会自动刷新，避免额外功耗。
-- **Pre-render Active Note on Startup**（默认关闭）：启动后在后台把当前笔记里的行内/显示公式逐条编译进缓存。使用现有单 worker 顺序编译，不增加内存；交互式渲染会插队，因此不会因为预热而卡住滚动。
-
-## 7. 界面汉化（简体中文 i18n）
-
-- 提供完整的简体中文语言包 `resources/locales/zh.json`，覆盖所有命令、右键菜单、模态框、设置面板、片段管理及 Typst 工具栏。
-- 完善语言检测逻辑，自动适配 Obsidian 界面语言设置（`zh`）、`window.moment.locale()`、系统与浏览器语言（`zh-CN`、`zh-Hans` 等）。
-- 修复 Linter 等模块的国际化实例引用，并在一致性测试中开启多语言 key 校验。
-
-## 8. LaTeX 公式转 Typst
-
-- **自动粘贴转换**（设置中可开关）：粘贴文本时自动识别其中的 LaTeX 公式并转换为 Typst 语法；自动避开代码块、代码段及 `$10-$20` 等货币与普通美元符号，异常时安全降级为原生粘贴。
-- **侧栏一键转换**：在侧边栏（Ribbon）提供转换按钮，支持选区转换、当前光标公式转换或全笔记 LaTeX 公式一键替换（单步撤销，不影响已有 Typst 公式）。
-- **转换器升级**：`tylax` 0.2.2 → 0.3.7，输出符号与内置 Typst 0.15 对齐，`\oplus` 不再产出已废弃的 `plus.circle`（现为 Typst 当前的 `plus.o`），并修复 `\mathop{\mathrm{Tr}}`、physics 括号等语法错误。
-- **字符处理规则**：LaTeX 里的斜体单词按数学语义拆成单字母（`CF` → `C F`，`C_{out}` → `C_(o u t)`）；正体文本改用双引号包裹（`\mathrm{ABC}` → `"ABC"`，`\textbf{ABC}` → `bold("ABC")`，`V_{\text{out}}` → `V_("out")`），避免 Typst 把多字母单词当作未知变量而报错。
-- **只转换 LaTeX**：检测时会区分 Typst 符号、函数调用与 `name.path`，已经转换过的公式（如 `alpha + beta`、`mat(1, 2; 3, 4)`、`plus.o`）不会被重复拆分。
-- **不打断阅读位置**：全笔记转换改为按区间就地替换，不再重写整个文档，光标与滚动位置保持不变；`\[...\]`、`\(...\)`、`\begin{...}` 等 Obsidian 不识别为公式的 LaTeX 也会一并转换。
-
-## 为什么要保留在 fork，而不是直接给上游提 PR
-
-- 上述改动实际包含三个独立部分：Typst 升级、CJK fallback、行内公式行为（宽松解析/基线/全高）。
-- 上游 `CONTRIBUTING.md` 要求在提 PR 前先开 issue。
-- 上游存在 `3.0.0` 分支，已经改用 git 版 typst 和不同架构；0.15.1 升级应该先确认目标分支。
-- CJK 自动加载系统字体、宽松行内公式都涉及行为变更，需要原作者先确认是否愿意维护。
-- `manifest.json` / `versions.json` 的版本号和本 README 属于 fork 发布/说明内容，不适合混进功能 PR。
-- 因此当前只推送到个人 fork，不向上游提交 PR。
-
-## 构建与验证
-
-完整的构建步骤（wasm 重建、`wasm-bindgen` 版本要求、`patch-wasm-glue.ts` 的作用）见 [docs/fork-changes.md](docs/fork-changes.md) 的「Typst 0.15.1」一节。日常命令：
+## 构建与部署
 
 ```sh
 bun install
-bun run build   # 产出 dist/main.js、dist/styles.css、dist/typst-<version>.wasm
-bun test        # 114 pass / 0 fail
+bun run build   # 产出 dist/main.js、dist/styles.css、dist/manifest.json、dist/typst-<version>.wasm
+bun test
 ```
 
-- **首次克隆或修改 `wasm/` 后**：先按文档重建 `pkg/typst_wasm_bg.wasm` 并 `cp pkg/typst_wasm_bg.wasm typst.wasm`，再执行 `bun run build`。`pkg/` 不在版本库里，缺少 `pkg/typst_wasm.js` 时 `src/libs/worker.ts` 的 import 无法解析，构建会直接失败。
-- **部署**：把 `dist/main.js`、`dist/styles.css`、`dist/manifest.json`、`dist/typst-<version>.wasm` 复制到 `<vault>/.obsidian/plugins/typst-mate/`，然后在 Obsidian 中重载插件。
-- 已在 Obsidian 1.14.5（Windows）实测 live preview、reading view、PDF/SVG/PNG 导出、代码块处理器和 jump。
+- 首次克隆或改动 `wasm/` 后，需先按 [docs/fork-changes.md](docs/fork-changes.md) 重建 `pkg/` 并复制 `typst.wasm`。
+- 将 `dist/` 下的四个产物复制到 `<vault>/.obsidian/plugins/typst-mate/` 并在 Obsidian 中重载插件即可使用。
