@@ -8,9 +8,9 @@ import SYMBOLS_BY_NAME from '../data/symbols.json';
 const TYPST_MATH_NAMES = new Set<string>([
   // Functions and keywords that are not symbols but are valid in Typst math.
   ...`abs accent and arccos arccot arccsc arcosh arcsec arcsin arctan arg arsinh artanh attach bb
-    binom block bold boxed cal cancel cases class comma context convolve det dif dim display dot
-    else eq equation exp floor frac frak gcd gt hat hom if in inline integral italic ker lcm learn
-    let lg limits ln lr lt macron mat max med mid min minus mod mono norm not op or overbrace
+    binom block bold boxed cal cancel cases class comma context convolve det Dif dif dim display dot
+    else eq equation exp floor frac frak gcd gt hat hom if in inline integral italic ker lcm
+    let lg limits ln lr lt macron mat max med mid min minus mod mono norm not notin op or overbrace
     overbracket overleftarrow overleftrightarrow overline overparen overrightarrow overshell place
     plus primes quad return root round sans scr script scripts sec serif set show sin sinh sqrt
     sscript st stretch sum sup sym tan tanh text thick thin tilde times tr underbrace
@@ -23,6 +23,130 @@ const TYPST_MATH_NAMES = new Set<string>([
     return parts.map((_, i) => parts.slice(0, i + 1).join('.'));
   }),
 ]);
+
+interface TypstOpaqueScan {
+  stripped: string;
+  hasString: boolean;
+  hasComment: boolean;
+  hasRaw: boolean;
+}
+
+/** Counts consecutive backslashes immediately before `index`. */
+function countBackslashesBefore(text: string, index: number): number {
+  let count = 0;
+  for (let i = index - 1; i >= 0 && text[i] === '\\'; i--) count++;
+  return count;
+}
+
+/**
+ * Replaces Typst opaque spans (closed `"..."` strings, block comments,
+ * `// ...` line comments, and closed inline raw spans) with spaces so their
+ * contents never trigger LaTeX or word-splitting heuristics.
+ */
+function scanTypstOpaqueSpans(code: string): TypstOpaqueScan {
+  let stripped = '';
+  let hasString = false;
+  let hasComment = false;
+  let hasRaw = false;
+
+  for (let i = 0; i < code.length; i++) {
+    const ch = code[i]!;
+
+    // Closed double-quoted string `"..."` (skipping escaped quotes/backslashes).
+    if (ch === '"' && countBackslashesBefore(code, i) % 2 === 0) {
+      let end = -1;
+      for (let j = i + 1; j < code.length; j++) {
+        if (code[j] === '\\') {
+          j++;
+          continue;
+        }
+        if (code[j] === '"') {
+          end = j;
+          break;
+        }
+      }
+      if (end !== -1) {
+        stripped += ' '.repeat(end - i + 1);
+        hasString = true;
+        i = end;
+        continue;
+      }
+    }
+
+    // Nested Typst block comment `/* ... */`.
+    if (ch === '/' && code[i + 1] === '*') {
+      let depth = 1;
+      let j = i + 2;
+      while (j < code.length && depth > 0) {
+        if (code[j] === '/' && code[j + 1] === '*') {
+          depth++;
+          j += 2;
+        } else if (code[j] === '*' && code[j + 1] === '/') {
+          depth--;
+          j += 2;
+        } else {
+          j++;
+        }
+      }
+      if (depth === 0) {
+        stripped += ' '.repeat(j - i);
+        hasComment = true;
+        i = j - 1;
+        continue;
+      }
+    }
+
+    // Typst line comment `// ...`.
+    if (ch === '/' && code[i + 1] === '/') {
+      const nl = code.indexOf('\n', i + 2);
+      const end = nl === -1 ? code.length : nl;
+      stripped += ' '.repeat(end - i);
+      hasComment = true;
+      i = end - 1;
+      continue;
+    }
+
+    // Closed inline raw span `` `...` ``.
+    if (ch === '`') {
+      let ticks = 1;
+      while (code[i + ticks] === '`') ticks++;
+      if (ticks === 2) {
+        stripped += '  ';
+        hasRaw = true;
+        i += 1;
+        continue;
+      }
+      const closing = '`'.repeat(ticks);
+      const end = code.indexOf(closing, i + ticks);
+      if (end !== -1) {
+        let closeEnd = end + ticks;
+        while (code[closeEnd] === '`') closeEnd++;
+        stripped += ' '.repeat(closeEnd - i);
+        hasRaw = true;
+        i = closeEnd - 1;
+        continue;
+      }
+    }
+
+    // Typst Unicode escape `\u{...}` (never a LaTeX macro or math word).
+    if (ch === '\\' && code[i + 1] === 'u' && code[i + 2] === '{' && countBackslashesBefore(code, i) % 2 === 0) {
+      let j = i + 3;
+      while (j < code.length && /[0-9a-fA-F]/.test(code[j]!)) j++;
+      if (j > i + 3 && code[j] === '}') {
+        stripped += ' '.repeat(j - i + 1);
+        i = j;
+        continue;
+      }
+    }
+
+    stripped += ch;
+  }
+
+  return { stripped, hasString, hasComment, hasRaw };
+}
+
+const TYPST_CONSTRUCT_CALL_RE =
+  /\b(?:cases|mat|vec|frac|binom|boxed|upright|bold|italic|cal|bb|frak|sans|mono|serif|lr|op|cancel|attach|scripts|limits|stretch|overbrace|underbrace|overbracket|underbracket|overparen|underparen|overshell|undershell|overline|underline)\s*\(/;
 
 /**
  * Returns true if `name(...)` starting at `openParenIdx` uses Typst-specific
@@ -55,6 +179,22 @@ function isTypstCustomCall(code: string, openParenIdx: number): boolean {
   return /(?:^|,)\s*[A-Za-z_][A-Za-z0-9_-]*:\s/.test(args);
 }
 
+/** Returns true when `stripped` / `scan` already shows unmistakable Typst syntax. */
+function hasTypstMarkers(stripped: string, scan: TypstOpaqueScan): boolean {
+  if (scan.hasString || scan.hasComment || scan.hasRaw) return true;
+  if (/(?<!\\)#/.test(stripped)) return true;
+  if (/[\^_]\(/.test(stripped)) return true;
+  if (/\b[A-Za-z][A-Za-z0-9]*\.[A-Za-z][A-Za-z0-9]*\b/.test(stripped)) return true;
+  if (TYPST_CONSTRUCT_CALL_RE.test(stripped)) return true;
+
+  for (const match of stripped.matchAll(/[A-Za-z][A-Za-z0-9]*\(/g)) {
+    const parenIdx = match.index + match[0].length - 1;
+    if (isTypstCustomCall(stripped, parenIdx)) return true;
+  }
+
+  return false;
+}
+
 /**
  * Checks if math-mode text is LaTeX even though it has no backslash command,
  * e.g. `CF`, `mc^2`, or `AB(45)` — identifiers that Typst would read as an
@@ -66,21 +206,25 @@ function isTypstCustomCall(code: string, openParenIdx: number): boolean {
 function hasLatexMathWord(code: string): boolean {
   const trimmed = code.trim();
   if (!trimmed) return false;
-  // Typst markers: code interpolation, text strings, raw code.
-  if (/[#"`]/.test(trimmed)) return false;
 
-  for (const match of trimmed.matchAll(/[A-Za-z][A-Za-z0-9]*/g)) {
+  const scan = scanTypstOpaqueSpans(trimmed);
+  // Typst markers: code interpolation, text strings, comments, raw code.
+  if (scan.hasString || scan.hasComment || scan.hasRaw) return false;
+  const { stripped } = scan;
+  if (/(?<!\\)#/.test(stripped)) return false;
+
+  for (const match of stripped.matchAll(/[A-Za-z][A-Za-z0-9]*/g)) {
     const word = match[0];
     if (word.length === 1) continue;
     const start = match.index;
     const end = start + word.length;
-    const next = trimmed[end];
-    const prev = trimmed[start - 1];
+    const next = stripped[end];
+    const prev = stripped[start - 1];
     // Dotted symbol/module paths (e.g. `plus.o`, `math.mat(...)`) belong to Typst.
     if (next === '.' || prev === '.') continue;
     if (TYPST_MATH_NAMES.has(word)) continue;
     // User-defined Typst calls with named args or trailing content blocks (e.g. `mark(x, color: red)`).
-    if (next === '(' && isTypstCustomCall(trimmed, end)) return false;
+    if (next === '(' && isTypstCustomCall(stripped, end)) return false;
     return true;
   }
 
@@ -112,20 +256,24 @@ export function isLikelyLatex(code: string): boolean {
   // Pure number or currency like "$100" or "100" or "10.50"
   if (/^\$?\d+(?:,\d+)*(?:\.\d+)?$/.test(trimmed)) return false;
 
-  // LaTeX macro commands: \frac, \sqrt, \alpha, \sum, \int, \mathbf, \text, \left, \right, etc.
-  if (/\\[a-zA-Z]+/.test(trimmed)) return true;
+  const scan = scanTypstOpaqueSpans(trimmed);
+  const { stripped } = scan;
 
-  // LaTeX special escaped symbols: \{, \}, \,, \;, \!, \ , \\
-  if (/\\([,;! ]|\{|\}|\\\\)/.test(trimmed)) return true;
+  // Unambiguous LaTeX macro commands (covers \frac, \alpha, \begin{...}, etc., excluding Typst \u{...}).
+  if (/(?<!\\)(?:\\\\)*\\(?!u\{[0-9a-fA-F]+\})[a-zA-Z]+/.test(stripped)) return true;
 
   // LaTeX exponent / subscript groups with braces: ^{...} or _{...}
-  if (/[\^_]\{[^}]*\}/.test(trimmed)) return true;
+  if (/[\^_]\{[^}]*\}/.test(stripped)) return true;
 
-  // LaTeX environments: \begin{...}
-  if (/\\begin\{[a-zA-Z*]+\}/.test(trimmed)) return true;
+  // LaTeX double-backslash line break `\\` (Typst uses single `\` + whitespace).
+  if (/(?<!\\)\\\\(?!\\)/.test(stripped)) return true;
 
   // LaTeX display/inline delimiters inside string
-  if (/\\\[[\s\S]*?\\\]/.test(trimmed) || /\\\([\s\S]*?\\\)/.test(trimmed)) return true;
+  if (/\\\[[\s\S]*?\\\]/.test(stripped) || /\\\([\s\S]*?\\\)/.test(stripped)) return true;
+
+  // Ambiguous escapes (\, \; \! \{ \}) can also appear inside Typst constructs
+  // (e.g. `cases(1\, & x >= 0)`), so only treat them as LaTeX without Typst markers.
+  if (!hasTypstMarkers(stripped, scan) && /(?<!\\)\\([,;!{}])/.test(stripped)) return true;
 
   return false;
 }

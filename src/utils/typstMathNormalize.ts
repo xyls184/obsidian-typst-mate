@@ -36,14 +36,33 @@ function backslashRun(input: string, index: number): number {
   return count;
 }
 
+/** Finds the index of the quote closing the double-quoted string at `openQuote`. */
+function findClosingQuote(input: string, openQuote: number): number {
+  for (let i = openQuote + 1; i < input.length; i++) {
+    if (input[i] === '\\') {
+      i++;
+      continue;
+    }
+    if (input[i] === '"') return i;
+  }
+  return -1;
+}
+
 /** Finds the index of the bracket closing the one opened at `open`. */
-function findClosing(input: string, open: number, openCh: string, closeCh: string): number {
+function findClosing(input: string, open: number, openCh: string, closeCh: string, respectQuotes = true): number {
   let depth = 0;
   for (let i = open; i < input.length; i++) {
     const ch = input[i];
     if (ch === '\\') {
       i++;
       continue;
+    }
+    if (ch === '"' && respectQuotes && openCh !== '"') {
+      const qEnd = findClosingQuote(input, i);
+      if (qEnd !== -1) {
+        i = qEnd;
+        continue;
+      }
     }
     if (ch === openCh) depth++;
     else if (ch === closeCh) {
@@ -52,6 +71,80 @@ function findClosing(input: string, open: number, openCh: string, closeCh: strin
     }
   }
   return -1;
+}
+
+/** Returns true if `input` contains any unescaped `$` outside Typst strings and comments. */
+function hasUnescapedDollar(input: string): boolean {
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i]!;
+    if (ch === '\\') {
+      i++;
+      continue;
+    }
+    if (ch === '"') {
+      const qEnd = findClosingQuote(input, i);
+      if (qEnd !== -1) {
+        i = qEnd;
+        continue;
+      }
+    }
+    if (ch === '/' && input[i + 1] === '*') {
+      const end = input.indexOf('*/', i + 2);
+      if (end !== -1) {
+        i = end + 1;
+        continue;
+      }
+    }
+    if (ch === '/' && input[i + 1] === '/') {
+      const end = input.indexOf('\n', i + 2);
+      if (end === -1) return false;
+      i = end;
+      continue;
+    }
+    if (ch === '$') return true;
+  }
+  return false;
+}
+
+/**
+ * Unwraps outer `#math.equation(...)[$ ... $]` or `$ ... $` emitted by `tylax`
+ * for environments like `align*` and `gather` so Obsidian's `$$...$$` wrapper
+ * does not break on inner `$` delimiters.
+ */
+function unwrapEquationWrapper(input: string): string {
+  const originalTrimmed = input.trim();
+  let current = originalTrimmed;
+
+  const prefix = '#math.equation(';
+  if (current.startsWith(prefix)) {
+    const closeParen = findClosing(current, prefix.length - 1, '(', ')');
+    if (closeParen !== -1) {
+      let cursor = closeParen + 1;
+      while (current[cursor] === ' ') cursor++;
+      if (current[cursor] === '[') {
+        const closeBracket = findClosing(current, cursor, '[', ']');
+        if (closeBracket === current.length - 1) {
+          current = current.slice(cursor + 1, closeBracket).trim();
+        }
+      }
+    }
+  }
+
+  if (
+    current.length >= 2 &&
+    current.startsWith('$') &&
+    !current.startsWith('$$') &&
+    current.endsWith('$') &&
+    !current.endsWith('$$') &&
+    backslashRun(current, current.length - 1) % 2 === 0
+  ) {
+    const inner = current.slice(1, -1);
+    if (!hasUnescapedDollar(inner)) {
+      return inner.trim();
+    }
+  }
+
+  return current === originalTrimmed ? input : current;
 }
 
 /** Whether `index` sits inside a double-quoted Typst string. */
@@ -294,7 +387,8 @@ function replaceUpright(input: string): string {
  */
 export function normalizeTypstMath(input: string): string {
   if (!input) return input;
-  let out = replaceBoxedMarkup(input);
+  let out = unwrapEquationWrapper(input);
+  out = replaceBoxedMarkup(out);
   out = replaceTextMarkup(out);
   out = replaceUpright(out);
   out = joinSplitNumbers(out);
@@ -341,7 +435,7 @@ export function preprocessLatexMath(latex: string): string {
         continue;
       }
 
-      const close = findClosing(out, idx + token.length - 1, '{', '}');
+      const close = findClosing(out, idx + token.length - 1, '{', '}', false);
       if (close === -1) break;
 
       out = out.slice(0, idx) + replace(out.slice(idx + token.length, close)) + out.slice(close + 1);

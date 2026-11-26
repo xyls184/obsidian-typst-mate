@@ -57,11 +57,11 @@ export async function collectRangeConversionEdits(
     const delimLen = isDisplay ? 2 : 1;
     const outerFrom = Math.max(0, region.from - delimLen - from);
     const outerTo = Math.min(to - from, region.to + delimLen - from);
+    // Exclude every CodeMirror-parsed math region so the regex fallback only
+    // handles structures CM skips (\[...\], \(...\), environments, tables).
+    excludeInRange.push({ from: outerFrom, to: outerTo });
 
-    if (processor.renderingEngine === RenderingEngine.MathJax) {
-      excludeInRange.push({ from: outerFrom, to: outerTo });
-      continue;
-    }
+    if (processor.renderingEngine === RenderingEngine.MathJax) continue;
 
     const innerFrom = region.from + eqStart;
     const innerTo = region.to - eqEnd;
@@ -94,7 +94,6 @@ export async function collectRangeConversionEdits(
       to: item.innerTo,
       insert: preserveOuterWhitespace(item.innerContent, typst),
     });
-    excludeInRange.push({ from: item.outerFrom, to: item.outerTo });
   }
 
   // Formulas written with LaTeX delimiters (\[...\], \(...\), environments)

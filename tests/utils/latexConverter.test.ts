@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'bun:test';
+import fs from 'node:fs';
+import path from 'node:path';
+import init, { Typst } from '../../pkg/typst_wasm.js';
 import {
   convertLatexInMarkdown,
   hasConvertibleLatex,
@@ -10,6 +13,7 @@ import {
   preserveOuterWhitespace,
   stripMathDelimiters,
 } from '../../src/utils/latexConverter';
+import { normalizeTypstMath, preprocessLatexMath } from '../../src/utils/typstMathNormalize';
 
 describe('latexConverter', () => {
   describe('hasPossibleLatex', () => {
@@ -273,6 +277,84 @@ describe('latexConverter', () => {
       expect(result.text).toContain('$$converted(0.10000000000000000000000_2=0.5=\\frac{1}{2})$$');
       expect(result.text).toContain('$$converted(-\\frac{1}{2}\\times 2^{-126}=-2^{-127})$$');
       expect(result.text).toContain('$$converted(-2^{-127})$$');
+    });
+  });
+
+  describe('Typst preservation and idempotence regression', () => {
+    it('keeps converted and user-edited Huffman multiline Typst formulas untouched', async () => {
+      const convertedHuffman =
+        'L_("Huffman") & = sum_(i = 1)^(8) p_(i) dot l_(i) \\ & =(0.19 + 0.32 + 0.21) times 2 +(0.07 + 0.06 + 0.10) times 4 +(0.02 + 0.03) times 5 \\ & = 0.72 times 2 + 0.23 times 4 + 0.05 times 5 \\ & = 1.44 + 0.92 + 0.25 \\ & = 2.61 "(bit)"';
+      const simplifiedHuffman =
+        'L_("Huffman") & = sum_(i = 1)^(8) p_(i) dot l_(i) \\ & =(0.19 + 0.32 + 0.21) times 2 +(0.07 + 0.06 + 0.10) times 4 +(0.02 + 0.03) times 5 \\ & = 2.61 "(bit)"';
+
+      expect(isLikelyLatexMath(convertedHuffman)).toBe(false);
+      expect(isLikelyLatexMath(simplifiedHuffman)).toBe(false);
+
+      const note = `$$${convertedHuffman}$$\n\n$$${simplifiedHuffman}$$`;
+      const result = await convertLatexInMarkdown(note, async (latex) => `reconverted(${latex})`);
+      expect(result.count).toBe(0);
+      expect(result.text).toBe(note);
+    });
+
+    it('preserves Typst line breaks, escaped punctuation in Typst calls, comments, strings, and unicode escapes', () => {
+      expect(isLikelyLatexMath('a = 1 \\ b = 2')).toBe(false);
+      expect(isLikelyLatexMath('cases(1\\, & x >= 0, - 1\\, & x < 0)')).toBe(false);
+      expect(isLikelyLatexMath('mat(a\\; b, c; d, e)')).toBe(false);
+      expect(isLikelyLatexMath('/* \\color{red} -> red */ x')).toBe(false);
+      expect(isLikelyLatexMath('x + y // \\frac{a}{b}')).toBe(false);
+      expect(isLikelyLatexMath('"C:\\\\path"')).toBe(false);
+      expect(isLikelyLatexMath('"a \\"b\\""')).toBe(false);
+      expect(isLikelyLatexMath('\\u{1F600}')).toBe(false);
+    });
+
+    it('still detects LaTeX double-backslash line breaks and standalone LaTeX escapes', () => {
+      expect(isLikelyLatexMath('a=1\\\\b=2')).toBe(true);
+      expect(isLikelyLatexMath('a = 1 \\\\ b = 2')).toBe(true);
+      expect(isLikelyLatexMath('\\{ 1, 2, 3 \\}')).toBe(true);
+      expect(isLikelyLatexMath('a \\, b')).toBe(true);
+      expect(isLikelyLatexMath('\\"a + \\frac{1}{2} + \\"o')).toBe(true);
+    });
+
+    it('produces idempotent Typst without outer $ delimiters across real tylax WASM conversions', async () => {
+      const wasmPath = path.resolve(__dirname, '../../typst.wasm');
+      const wasm = fs.readFileSync(wasmPath);
+      await init({ module_or_path: wasm });
+      const typst = new Typst(
+        '/',
+        () => {
+          throw 12;
+        },
+        16,
+        0,
+      );
+      const convert = (latex: string) => normalizeTypstMath(typst.latexeq_to_typm(preprocessLatexMath(latex)));
+
+      const samples = [
+        String.raw`\begin{aligned} L_{\text{Huffman}} &= \sum_{i=1}^{8} p_i \cdot l_i \\ &= (0.19 + 0.32 + 0.21) \times 2 + (0.07 + 0.06 + 0.10) \times 4 + (0.02 + 0.03) \times 5 \\ &= 0.72 \times 2 + 0.23 \times 4 + 0.05 \times 5 \\ &= 1.44 + 0.92 + 0.25 \\ &= 2.61\text{ (bit)} \end{aligned}`,
+        String.raw`\begin{align*} a &= b + c \\ d &= e + f \end{align*}`,
+        String.raw`\begin{align} a &= 1 \\ b &= 2 \end{align}`,
+        String.raw`\begin{gather} x = 1 \\ y = 2 \end{gather}`,
+        String.raw`\begin{gather*} x = 1 \\ y = 2 \end{gather*}`,
+        String.raw`\begin{equation} x = 1 \end{equation}`,
+        String.raw`\begin{split} a &= 1 \\ &= 2 \end{split}`,
+        String.raw`f(x) = \begin{cases} 1, & x \ge 0 \\ -1, & x < 0 \end{cases}`,
+        String.raw`\begin{pmatrix} 1 & 2 \\ 3 & 4 \end{pmatrix}`,
+        String.raw`\sum_{\substack{i=1 \\ j=1}}^{n} a_{ij}`,
+        String.raw`\color{red}{x} + \textcolor{blue}{y}`,
+        String.raw`\text{C:\path}`,
+        String.raw`\boxed{a + b}`,
+        String.raw`\{ 1, 2, 3 \}`,
+        String.raw`a \, b \; c \! d \ e`,
+        String.raw`a = 1 \\ b = 2`,
+      ];
+
+      for (const latex of samples) {
+        const converted = convert(latex);
+        expect(isLikelyLatexMath(converted)).toBe(false);
+        // Ensure no unescaped `$` outside quotes remains in the normalized formula.
+        const withoutQuotedStrings = converted.replace(/"(?:\\.|[^"\\])*"/g, '');
+        expect(withoutQuotedStrings).not.toMatch(/(?<!\\)\$/);
+      }
     });
   });
 });

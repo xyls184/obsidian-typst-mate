@@ -75,6 +75,20 @@ describe('normalizeTypstMath', () => {
     expect(normalizeTypstMath('/* 1 0 . 5 */ 2 0')).toBe('/* 1 0 . 5 */ 20');
     expect(normalizeTypstMath('x_(1)0')).toBe('x_(1)0');
   });
+
+  it('unwraps #math.equation(...)[$ ... $] and outer $ ... $ wrappers without touching inner $', () => {
+    expect(normalizeTypstMath('#math.equation(block: true, numbering: none)[\n$ a & = 1 0 \\ b & = 2 0 $\n]')).toBe(
+      'a & = 10 \\ b & = 20',
+    );
+    expect(normalizeTypstMath('$ x = 1 0 \\ y = 2 0 $')).toBe('x = 10 \\ y = 20');
+    expect(normalizeTypstMath('$ a $ + $ b $')).toBe('$ a $ + $ b $');
+  });
+
+  it('handles quoted closing brackets inside #text[...] and upright(...)', () => {
+    expect(normalizeTypstMath('#text[a]b]')).toBe('"a"b]');
+    expect(normalizeTypstMath('#text[a"]"b]')).toBe('"a\\"]\\"b"');
+    expect(normalizeTypstMath('upright("a)b")')).toBe('"a)b"');
+  });
 });
 
 describe('preprocessLatexMath', () => {
